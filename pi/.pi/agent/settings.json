@@ -1,5 +1,7 @@
 {
   "lastChangelogVersion": "0.84.4",
-  "theme": "dark",
-  "quietStartup": true
+  "theme": "onedark",
+  "quietStartup": true,
+  "tuiMode": "fullscreen",
+  "hideThinkingBlock": true
 }

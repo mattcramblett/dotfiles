@@ -1,0 +1,88 @@
+{
+ "$schema": "https://raw.githubusercontent.com/earendil-works/pi/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
+ "name": "onedark",
+ "vars": {
+   "bg": "#282c34",
+   "bg2": "#2c313a",
+   "bg3": "#3e4451",
+   "fg": "#abb2bf",
+   "gray": "#5c6370",
+   "blue": "#61afef",
+   "cyan": "#56b6c2",
+   "green": "#98c379",
+   "purple": "#c678dd",
+   "red": "#e06c75",
+   "orange": "#d19a66",
+   "yellow": "#e5c07b"
+ },
+ "colors": {
+   "accent": "blue",
+   "border": "gray",
+   "borderAccent": "blue",
+   "borderMuted": "bg3",
+   "success": "green",
+   "error": "red",
+   "warning": "yellow",
+   "muted": "gray",
+   "dim": "#4b5263",
+   "text": "fg",
+   "thinkingText": "gray",
+
+   "selectedBg": "bg3",
+   "scrollbarThumb": "bg3",
+   "searchMatchBg": "bg3",
+   "searchMatchText": "yellow",
+
+   "userMessageBg": "bg2",
+   "userMessageText": "fg",
+   "customMessageBg": "bg2",
+   "customMessageText": "fg",
+   "customMessageLabel": "purple",
+
+   "toolPendingBg": "#2f333d",
+   "toolSuccessBg": "#2d3a2d",
+   "toolErrorBg": "#3a2d2d",
+   "toolTitle": "cyan",
+   "toolOutput": "fg",
+
+   "mdHeading": "purple",
+   "mdLink": "blue",
+   "mdLinkUrl": "gray",
+   "mdCode": "green",
+   "mdCodeBlock": "fg",
+   "mdCodeBlockBorder": "gray",
+   "mdQuote": "gray",
+   "mdQuoteBorder": "gray",
+   "mdHr": "bg3",
+   "mdListBullet": "cyan",
+
+   "toolDiffAdded": "green",
+   "toolDiffRemoved": "red",
+   "toolDiffContext": "gray",
+
+   "syntaxComment": "gray",
+   "syntaxKeyword": "purple",
+   "syntaxFunction": "blue",
+   "syntaxVariable": "red",
+   "syntaxString": "green",
+   "syntaxNumber": "orange",
+   "syntaxType": "yellow",
+   "syntaxOperator": "cyan",
+   "syntaxPunctuation": "fg",
+
+   "thinkingOff": "gray",
+   "thinkingMinimal": "blue",
+   "thinkingLow": "cyan",
+   "thinkingMedium": "green",
+   "thinkingHigh": "yellow",
+   "thinkingXhigh": "orange",
+   "thinkingMax": "red",
+
+   "bashMode": "orange"
+ },
+ "export": {
+   "pageBg": "#282c34",
+   "cardBg": "#2c313a",
+   "infoBg": "#3e4451"
+ }
+}
