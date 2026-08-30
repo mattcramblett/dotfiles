@@ -41,9 +41,6 @@ brew "zlib"
 cask "ghostty"
 # Cross-platform Git credential storage for multiple hosting providers
 cask "git-credential-manager"
-# Multiplayer code editor
-cask "zed"
 cargo "cargo-generate"
 cargo "cargo-udeps"
-cargo "rustlings"
 npm "@earendil-works/pi-coding-agent"
