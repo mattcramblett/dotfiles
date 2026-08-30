@@ -1,0 +1,13 @@
+font-size = 16
+background = 020a1a
+window-colorspace = display-p3
+macos-titlebar-proxy-icon = hidden
+
+# macOS specific features
+macos-icon = holographic
+
+macos-titlebar-style = tabs
+macos-option-as-alt = true 
+window-save-state = always
+window-vsync = true
+quick-terminal-screen = macos-menu-bar
