@@ -1,0 +1,36 @@
+{
+  "toolDescriptionMode": "compact",
+  "asyncByDefault": false,
+  "asyncWidget": true,
+  "forceTopLevelAsync": false,
+  "waitTool": {
+    "enabled": false
+  },
+  "intercomBridge": {
+    "mode": "off",
+    "resultDelivery": false
+  },
+  "globalConcurrencyLimit": 1,
+  "maxSubagentSpawnsPerSession": 1,
+  "maxSubagentDepth": 1,
+  "defaultSessionDir": "~/.pi/agent/sessions/subagent",
+  "singleRunOutputBaseDir": "~/.pi/agent/subagent-outputs",
+  "worktreeBaseDir": "~/.pi/agent/worktrees/pi-subagents",
+  "scheduledRuns": {
+    "enabled": false,
+    "maxPending": 1,
+    "maxLatenessMs": 300000
+  },
+  "parallel": {
+    "maxTasks": 1,
+    "concurrency": 1
+  },
+  "completionBatch": {
+    "enabled": true,
+    "debounceMs": 150,
+    "maxWaitMs": 1000,
+    "stragglerDebounceMs": 75,
+    "stragglerMaxWaitMs": 400,
+    "stragglerWindowMs": 2000
+  }
+}
