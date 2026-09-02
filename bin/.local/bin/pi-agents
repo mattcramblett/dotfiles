@@ -24,19 +24,19 @@ while IFS="$separator" read -r pane_id session window pane_index status name cwd
   case "$status" in
     needs-you)
       rank=1
-      status_label=$'\033[33m● needs-you\033[0m'
+      status_label=$'\033[33m●\033[0m needs-you'
       ;;
     working)
       rank=2
-      status_label=$'\033[36m● working\033[0m'
+      status_label=$'\033[36m●\033[0m working  '
       ;;
     idle)
       rank=3
-      status_label=$'\033[2m○ idle\033[0m'
+      status_label=$'\033[2m○\033[0m idle     '
       ;;
     *)
       rank=4
-      status_label="? $status"
+      printf -v status_label '? %-9.9s' "$status"
       ;;
   esac
 
@@ -49,9 +49,11 @@ while IFS="$separator" read -r pane_id session window pane_index status name cwd
     display_cwd="~/${cwd#"$HOME/"}"
   fi
 
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$rank" "$pane_id" "$session" "$window" "$updated_at" \
-    "$status_label" "$name" "$location" "$display_cwd" >>"$records"
+  printf -v display '%s  %-16.16s  %-16.16s  %s' \
+    "$status_label" "$name" "$location" "$display_cwd"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$rank" "$pane_id" "$session" "$window" "$updated_at" "$display" \
+    >>"$records"
 done < <(tmux list-panes -a -F "$format")
 
 if [[ ! -s "$records" ]]; then
@@ -59,14 +61,17 @@ if [[ ! -s "$records" ]]; then
   exit 0
 fi
 
+printf -v header '%-11s  %-16s  %-16s  %s' \
+  "STATUS" "NAME" "LOCATION" "CWD"
+
 selection=$(
   sort -s -t $'\t' -k1,1n "$records" |
     fzf \
       --ansi \
       --delimiter=$'\t' \
-      --with-nth=6.. \
+      --with-nth=6 \
       --no-sort \
-      --header=$'STATUS\tNAME\tLOCATION\tWORKING DIRECTORY' \
+      --header="$header" \
       --preview='tmux capture-pane -ep -t {2} -S -100' \
       --preview-window='right,60%,wrap,follow'
 ) || exit 0
