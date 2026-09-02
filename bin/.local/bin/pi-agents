@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if ! command -v tmux >/dev/null 2>&1; then
+  printf 'pi-agents requires tmux.\n' >&2
+  exit 1
+fi
+
+if ! command -v fzf >/dev/null 2>&1; then
+  printf 'pi-agents requires fzf.\n' >&2
+  exit 1
+fi
+
+separator=$'\x1f'
+records=$(mktemp "${TMPDIR:-/tmp}/pi-agents.XXXXXX")
+trap 'rm -f "$records"' EXIT
+
+format="#{pane_id}${separator}#{session_name}${separator}#{window_index}${separator}#{pane_index}${separator}#{@pi_status}${separator}#{@pi_name}${separator}#{pane_current_path}${separator}#{@pi_updated_at}"
+
+while IFS="$separator" read -r pane_id session window pane_index status name cwd updated_at; do
+  [[ -n "$status" ]] || continue
+
+  case "$status" in
+    needs-you)
+      rank=1
+      status_label=$'\033[33m● needs-you\033[0m'
+      ;;
+    working)
+      rank=2
+      status_label=$'\033[36m● working\033[0m'
+      ;;
+    idle)
+      rank=3
+      status_label=$'\033[2m○ idle\033[0m'
+      ;;
+    *)
+      rank=4
+      status_label="? $status"
+      ;;
+  esac
+
+  [[ -n "$name" ]] || name=$(basename "$cwd")
+  location="$session:$window.$pane_index"
+  display_cwd="$cwd"
+  if [[ "$cwd" == "$HOME" ]]; then
+    display_cwd="~"
+  elif [[ "$cwd" == "$HOME/"* ]]; then
+    display_cwd="~/${cwd#"$HOME/"}"
+  fi
+
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$rank" "$pane_id" "$session" "$window" "$updated_at" \
+    "$status_label" "$name" "$location" "$display_cwd" >>"$records"
+done < <(tmux list-panes -a -F "$format")
+
+if [[ ! -s "$records" ]]; then
+  printf 'No running Pi agents found.\n'
+  exit 0
+fi
+
+selection=$(
+  sort -s -t $'\t' -k1,1n "$records" |
+    fzf \
+      --ansi \
+      --delimiter=$'\t' \
+      --with-nth=6.. \
+      --no-sort \
+      --header=$'STATUS\tNAME\tLOCATION\tWORKING DIRECTORY' \
+      --preview='tmux capture-pane -ep -t {2} -S -100' \
+      --preview-window='right,60%,wrap,follow'
+) || exit 0
+
+IFS=$'\t' read -r _rank pane_id session window _updated_at _rest <<<"$selection"
+
+tmux switch-client -t "$session"
+tmux select-window -t "$session:$window"
+tmux select-pane -t "$pane_id"

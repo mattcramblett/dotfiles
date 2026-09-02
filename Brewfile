@@ -11,6 +11,8 @@ brew "docker"
 brew "docker-compose"
 # Simple, fast and user-friendly alternative to find
 brew "fd"
+# Command-line fuzzy finder
+brew "fzf"
 # Distributed revision control system
 brew "git"
 # Syntax-highlighting pager for git and diff output
