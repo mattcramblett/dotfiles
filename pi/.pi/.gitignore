@@ -6,4 +6,5 @@ agent/bin/**/*
 agent/models-store.json
 agent/sessions/**/*
 agent/skills/local/
+agent/extensions/pi-permission-system/logs/
 .local.env

@@ -7,7 +7,8 @@
   "packages": [
     "npm:pi-mcp-adapter@2.15.0",
     "npm:pi-subagents@0.38.0",
-    "npm:pi-web-access@0.17.0"
+    "npm:pi-web-access@0.17.0",
+    "npm:@gotgenes/pi-permission-system@31.0.0"
   ],
   "subagents": {
     "disableBuiltins": true,

@@ -1,0 +1,34 @@
+{
+  "permission": {
+    "*": "allow",
+    "path": {
+      "*": "allow",
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "*.env.example": "allow"
+    },
+    "bash": {
+      "*": "ask",
+      "rm -rf *": "deny",
+      "sudo *": "ask",
+      "cat *": "allow",
+      "delta *": "allow",
+      "file *": "allow",
+      "find *": "allow",
+      "git diff *": "allow",
+      "git log *": "allow",
+      "git show *": "allow",
+      "git status": "allow",
+      "head *": "allow",
+      "jq *": "allow",
+      "ls *": "allow",
+      "pwd": "allow",
+      "rg *": "allow",
+      "stat *": "allow",
+      "tail *": "allow",
+      "wc *": "allow",
+      "which *": "allow"
+    },
+    "external_directory": "ask"
+  }
+}
