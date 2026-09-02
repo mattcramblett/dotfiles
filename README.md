@@ -22,20 +22,15 @@ git clone git@github.com:mattcramblett/dotfiles.git ~/dotfiles
 cd ~/dotfiles
 ```
 
-Install the development tools and applications:
+Run the installer:
 
 ```bash
-export DOTFILES_DIR="$PWD"
-bash install.sh
+./install.sh
 ```
 
-Link the configuration into the home directory:
+The script installs Homebrew dependencies, configures the latest Node.js and Ruby versions through asdf, installs Rust tools, and links the dotfiles into the home directory with Stow.
 
-```bash
-stow --target="$HOME" bin ghostty lazygit nvim pi tmux
-```
-
-Existing files at the target paths may need to be moved before running Stow.
+Existing files at the target paths may need to be moved before running the installer.
 
 ## Updating links
 
