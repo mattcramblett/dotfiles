@@ -2,4 +2,5 @@ agent/auth.json
 agent/bin/**/*
 agent/models-store.json
 agent/sessions/**/*
+agent/skills/local/
 .local.env
