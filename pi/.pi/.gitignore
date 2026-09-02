@@ -1,3 +1,6 @@
+agent/mcp-cache.json
+agent/mcp-npx-cache.json
+agent/piagent-gateway/
 agent/auth.json
 agent/bin/**/*
 agent/models-store.json
