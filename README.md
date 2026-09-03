@@ -58,8 +58,20 @@ wt <worktree-name>
 
 For example, `wt feature/login` creates the branch `feature/login`, places the worktree beside the primary repository, and names the tmux window `<repository>-feature-login`.
 
+### `wtlist`
+
+Browse the current repository's worktrees and open the selected worktree in tmux:
+
+```bash
+wtlist
+```
+
+When run outside tmux, the selected worktree path is printed to standard output.
+
 ## Features
 
 ### Pi agent picker
 
 Inside tmux, press `Ctrl-Space`, then `a`, to view running Pi agents, inspect their pane output, and jump to a selected agent. Press `Ctrl-R` in the picker to refresh the agent list and preview.
+
+Press `Ctrl-Space`, then `t`, to browse worktrees for the repository in the current pane. Selecting a worktree focuses an existing pane at that path or opens it in a new tmux window.

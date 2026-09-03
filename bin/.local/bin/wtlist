@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+for command in git fzf; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    printf 'wtlist requires %s.\n' "$command" >&2
+    exit 1
+  fi
+done
+
+if [[ -n "${TMUX:-}" ]] && ! command -v tmux >/dev/null 2>&1; then
+  printf 'wtlist requires tmux.\n' >&2
+  exit 1
+fi
+
+if ! common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+  printf 'wtlist must be run inside a Git repository.\n' >&2
+  exit 1
+fi
+
+repository_dir=$(dirname "$common_dir")
+repository_name=$(basename "$repository_dir")
+records=$(mktemp "${TMPDIR:-/tmp}/wtlist.XXXXXX")
+trap 'rm -f "$records"' EXIT
+
+path=
+branch=
+state=
+
+write_worktree() {
+  if [[ -z "$path" ]]; then
+    return 0
+  fi
+
+  local display_branch=${branch:-"(unknown)"}
+  if [[ -n "$state" ]]; then
+    display_branch="$display_branch [$state]"
+  fi
+
+  printf '%s\t%-24.24s  %s\n' "$path" "$display_branch" "$path" >>"$records"
+}
+
+while IFS= read -r line || [[ -n "$line" ]]; do
+  case "$line" in
+    "worktree "*)
+      path=${line#worktree }
+      branch=
+      state=
+      ;;
+    "branch refs/heads/"*)
+      branch=${line#branch refs/heads/}
+      ;;
+    detached)
+      branch="(detached)"
+      ;;
+    locked*)
+      state="locked"
+      ;;
+    prunable*)
+      state="prunable"
+      ;;
+    "")
+      write_worktree
+      path=
+      ;;
+  esac
+done < <(git worktree list --porcelain)
+write_worktree
+
+if [[ ! -s "$records" ]]; then
+  printf 'No worktrees found for %s.\n' "$repository_name"
+  exit 0
+fi
+
+printf -v columns '%-24s  %s' "BRANCH" "PATH"
+printf -v header '%s worktrees\n%s' "$repository_name" "$columns"
+selection=$(
+  fzf \
+    --delimiter=$'\t' \
+    --with-nth=2 \
+    --header="$header" \
+    --prompt='worktree> ' \
+    --preview='git -C {1} status --short --branch' \
+    --preview-window='right,55%,wrap' \
+    <"$records"
+) || exit 0
+
+IFS=$'\t' read -r selected_path _display <<<"$selection"
+
+if [[ -z "${TMUX:-}" ]]; then
+  printf '%s\n' "$selected_path"
+  exit 0
+fi
+
+separator=$'\x1f'
+target_pane=
+target_session=
+target_window=
+format="#{pane_id}${separator}#{session_name}${separator}#{window_index}${separator}#{pane_current_path}"
+
+while IFS="$separator" read -r pane_id session window pane_path; do
+  if [[ "$pane_path" == "$selected_path" ]]; then
+    target_pane=$pane_id
+    target_session=$session
+    target_window=$window
+    break
+  fi
+done < <(tmux list-panes -a -F "$format")
+
+if [[ -n "$target_pane" ]]; then
+  tmux switch-client -t "$target_session"
+  tmux select-window -t "$target_session:$target_window"
+  tmux select-pane -t "$target_pane"
+else
+  selected_branch=$(git -C "$selected_path" branch --show-current)
+  window_suffix=${selected_branch:-$(basename "$selected_path")}
+  window_suffix=${window_suffix//\//-}
+  tmux new-window -n "$repository_name-$window_suffix" -c "$selected_path"
+fi
