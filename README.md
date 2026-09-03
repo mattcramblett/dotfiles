@@ -29,7 +29,7 @@ Run the installer:
 ./install.sh
 ```
 
-The script installs Homebrew dependencies, configures the latest Node.js and Ruby versions through asdf, installs Rust tools, and links the dotfiles into the home directory with Stow.
+The script installs Homebrew dependencies, configures Java, Node.js, and Ruby through asdf, installs Rust tools, and links the dotfiles into the home directory with Stow.
 
 Existing files at the target paths may need to be moved before running the installer.
 
@@ -73,7 +73,7 @@ When run outside tmux, the selected worktree path is printed to standard output.
 
 ### Zsh
 
-The installer clones Oh My Zsh and Powerlevel10k, installs the Meslo Nerd Font, and links the managed shell configuration. Powerlevel10k settings live in `zsh/.p10k.zsh`. Machine-specific or sensitive settings belong in the untracked `~/.zshrc.local` file.
+The installer clones Oh My Zsh, Powerlevel10k, zsh-autosuggestions, and zsh-syntax-highlighting, installs the Meslo Nerd Font, and links the managed shell configuration. Powerlevel10k settings live in `zsh/.p10k.zsh`. Machine-specific or sensitive settings belong in the untracked `~/.zshrc.local` file.
 
 ### Pi agent picker
 

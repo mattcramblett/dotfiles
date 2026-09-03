@@ -34,9 +34,15 @@ add_asdf_plugin() {
 
 install_asdf_tool() {
   local name=$1
+  local version_prefix=${2:-}
   local version
 
-  version=$(asdf latest "$name")
+  if [[ -n "$version_prefix" ]]; then
+    version=$(asdf latest "$name" "$version_prefix")
+  else
+    version=$(asdf latest "$name")
+  fi
+
   asdf install "$name" "$version"
   asdf set -u "$name" "$version"
 }
@@ -64,6 +70,12 @@ clone_dependency https://github.com/ohmyzsh/ohmyzsh.git "$HOME/.oh-my-zsh"
 clone_dependency \
   https://github.com/romkatv/powerlevel10k.git \
   "$HOME/.oh-my-zsh/custom/themes/powerlevel10k"
+clone_dependency \
+  https://github.com/zsh-users/zsh-autosuggestions.git \
+  "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
+clone_dependency \
+  https://github.com/zsh-users/zsh-syntax-highlighting.git \
+  "$HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
 
 stow \
   --dir="$DOTFILES_DIR" \
@@ -74,8 +86,10 @@ stow \
 export ASDF_DATA_DIR="${ASDF_DATA_DIR:-$HOME/.asdf}"
 export PATH="$ASDF_DATA_DIR/shims:$PATH"
 
+add_asdf_plugin java https://github.com/halcyon/asdf-java.git
 add_asdf_plugin nodejs https://github.com/asdf-vm/asdf-nodejs.git
 add_asdf_plugin ruby https://github.com/asdf-vm/asdf-ruby.git
+install_asdf_tool java temurin-21
 install_asdf_tool nodejs
 install_asdf_tool ruby
 

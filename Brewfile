@@ -52,5 +52,5 @@ brew "gh"
 brew "tuicr"
 # Lightweight and flexible command-line JSON processor
 brew "jq"
-# Fish shell like syntax highlighting for zsh
-brew "zsh-syntax-highlighting"
+# Android mobile dev tooling
+brew "android-commandlinetools"
