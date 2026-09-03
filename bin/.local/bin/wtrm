@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  printf 'Usage: wtrm --path <worktree-path>\n'
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -ne 2 || "$1" != "--path" ]]; then
+  usage >&2
+  exit 2
+fi
+
+if ! command -v git >/dev/null 2>&1; then
+  printf 'wtrm requires git.\n' >&2
+  exit 1
+fi
+
+requested_path=$2
+if ! worktree_path=$(git -C "$requested_path" rev-parse --show-toplevel 2>/dev/null); then
+  printf 'Not a Git worktree: %s\n' "$requested_path" >&2
+  exit 1
+fi
+
+common_dir=$(git -C "$worktree_path" rev-parse --path-format=absolute --git-common-dir)
+repository_dir=$(dirname "$common_dir")
+
+if [[ "$worktree_path" == "$repository_dir" ]]; then
+  printf 'The primary worktree cannot be removed.\n' >&2
+  exit 1
+fi
+
+registered=false
+while IFS= read -r line; do
+  if [[ "$line" == "worktree $worktree_path" ]]; then
+    registered=true
+    break
+  fi
+done < <(git -C "$repository_dir" worktree list --porcelain)
+
+if [[ "$registered" != true ]]; then
+  printf 'Not a registered worktree: %s\n' "$worktree_path" >&2
+  exit 1
+fi
+
+branch=$(git -C "$worktree_path" branch --show-current)
+branch=${branch:-"(detached)"}
+
+printf 'Remove worktree?\n  Branch: %s\n  Path:   %s\n[y/N] ' \
+  "$branch" "$worktree_path" >/dev/tty
+IFS= read -r confirmation </dev/tty
+
+if [[ "$confirmation" != "y" && "$confirmation" != "Y" ]]; then
+  printf 'Removal cancelled.\n' >/dev/tty
+  exit 0
+fi
+
+git -C "$repository_dir" worktree remove "$worktree_path"
+
+if [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
+  separator=$'\x1f'
+  format="#{pane_id}${separator}#{pane_current_path}"
+
+  while IFS="$separator" read -r pane_id pane_path; do
+    if [[ "$pane_path" == "$worktree_path" ]]; then
+      tmux kill-pane -t "$pane_id"
+    fi
+  done < <(tmux list-panes -a -F "$format")
+fi
+
+printf 'Removed worktree. Branch preserved: %s\n' "$branch" >/dev/tty

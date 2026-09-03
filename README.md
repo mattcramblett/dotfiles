@@ -66,7 +66,7 @@ Browse the current repository's worktrees and open the selected worktree in tmux
 wtlist
 ```
 
-When run outside tmux, the selected worktree path is printed to standard output.
+When run outside tmux, the selected worktree path is printed to standard output. Press `Ctrl-X` in the picker to confirm and remove a linked worktree. The primary worktree cannot be removed, dirty worktrees are rejected by Git, and the branch is preserved.
 
 ## Features
 

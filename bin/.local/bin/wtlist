@@ -2,12 +2,10 @@
 
 set -euo pipefail
 
-for command in git fzf; do
-  if ! command -v "$command" >/dev/null 2>&1; then
-    printf 'wtlist requires %s.\n' "$command" >&2
-    exit 1
-  fi
-done
+if ! command -v git >/dev/null 2>&1; then
+  printf 'wtlist requires git.\n' >&2
+  exit 1
+fi
 
 if [[ -n "${TMUX:-}" ]] && ! command -v tmux >/dev/null 2>&1; then
   printf 'wtlist requires tmux.\n' >&2
@@ -21,8 +19,6 @@ fi
 
 repository_dir=$(dirname "$common_dir")
 repository_name=$(basename "$repository_dir")
-records=$(mktemp "${TMPDIR:-/tmp}/wtlist.XXXXXX")
-trap 'rm -f "$records"' EXIT
 
 path=
 branch=
@@ -38,49 +34,79 @@ write_worktree() {
     display_branch="$display_branch [$state]"
   fi
 
-  printf '%s\t%-24.24s  %s\n' "$path" "$display_branch" "$path" >>"$records"
+  printf '%s\t%-24.24s  %s\n' "$path" "$display_branch" "$path"
 }
 
-while IFS= read -r line || [[ -n "$line" ]]; do
-  case "$line" in
-    "worktree "*)
-      path=${line#worktree }
-      branch=
-      state=
-      ;;
-    "branch refs/heads/"*)
-      branch=${line#branch refs/heads/}
-      ;;
-    detached)
-      branch="(detached)"
-      ;;
-    locked*)
-      state="locked"
-      ;;
-    prunable*)
-      state="prunable"
-      ;;
-    "")
-      write_worktree
-      path=
-      ;;
-  esac
-done < <(git worktree list --porcelain)
-write_worktree
+list_worktrees() {
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      "worktree "*)
+        path=${line#worktree }
+        branch=
+        if [[ "$path" == "$repository_dir" ]]; then
+          state="primary"
+        else
+          state=
+        fi
+        ;;
+      "branch refs/heads/"*)
+        branch=${line#branch refs/heads/}
+        ;;
+      detached)
+        branch="(detached)"
+        ;;
+      locked*)
+        state="locked"
+        ;;
+      prunable*)
+        state="prunable"
+        ;;
+      "")
+        write_worktree
+        path=
+        ;;
+    esac
+  done < <(git worktree list --porcelain)
+  write_worktree
+}
+
+if [[ "${1:-}" == "--list" ]]; then
+  list_worktrees
+  exit 0
+fi
+
+if [[ $# -ne 0 ]]; then
+  printf 'Usage: wtlist\n' >&2
+  exit 2
+fi
+
+if ! command -v fzf >/dev/null 2>&1; then
+  printf 'wtlist requires fzf.\n' >&2
+  exit 1
+fi
+
+records=$(mktemp "${TMPDIR:-/tmp}/wtlist.XXXXXX")
+trap 'rm -f "$records"' EXIT
+list_worktrees >"$records"
 
 if [[ ! -s "$records" ]]; then
   printf 'No worktrees found for %s.\n' "$repository_name"
   exit 0
 fi
 
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 printf -v columns '%-24s  %s' "BRANCH" "PATH"
-printf -v header '%s worktrees\n%s' "$repository_name" "$columns"
+printf -v header '%s worktrees (Ctrl-X removes)\n%s' "$repository_name" "$columns"
+printf -v reload_command '%q --list' "$0"
+printf -v remove_command '%q --path' "$script_dir/wtrm"
+
 selection=$(
   fzf \
     --delimiter=$'\t' \
     --with-nth=2 \
     --header="$header" \
     --prompt='worktree> ' \
+    --bind="ctrl-x:execute($remove_command {1})+reload-sync($reload_command)+refresh-preview" \
     --preview='git -C {1} status --short --branch' \
     --preview-window='right,55%,wrap' \
     <"$records"
