@@ -34,7 +34,8 @@ add_asdf_plugin() {
 
 install_asdf_tool() {
   local name=$1
-  local version_prefix=${2:-}
+  local version_prefix=$2
+  local result_variable=$3
   local version
 
   if [[ -n "$version_prefix" ]]; then
@@ -44,7 +45,7 @@ install_asdf_tool() {
   fi
 
   asdf install "$name" "$version"
-  asdf set -u "$name" "$version"
+  printf -v "$result_variable" '%s' "$version"
 }
 
 clone_dependency() {
@@ -89,12 +90,25 @@ export PATH="$ASDF_DATA_DIR/shims:$PATH"
 add_asdf_plugin java https://github.com/halcyon/asdf-java.git
 add_asdf_plugin nodejs https://github.com/asdf-vm/asdf-nodejs.git
 add_asdf_plugin ruby https://github.com/asdf-vm/asdf-ruby.git
-install_asdf_tool java temurin-21
-install_asdf_tool nodejs
-install_asdf_tool ruby
+
+java_version=
+nodejs_version=
+ruby_version=
+install_asdf_tool java temurin-21 java_version
+install_asdf_tool nodejs "" nodejs_version
+install_asdf_tool ruby "" ruby_version
+
+if [[ ! -e "$HOME/.tool-versions" && ! -L "$HOME/.tool-versions" ]]; then
+  printf 'java %s\nnodejs %s\nruby %s\n' \
+    "$java_version" "$nodejs_version" "$ruby_version" \
+    >"$HOME/.tool-versions"
+fi
+
+export ASDF_JAVA_VERSION="$java_version"
+export ASDF_NODEJS_VERSION="$nodejs_version"
+export ASDF_RUBY_VERSION="$ruby_version"
 
 BUNDLE_GEMFILE="$DOTFILES_DIR/Gemfile" bundle install
-ruby_version=$(asdf current ruby | awk '$1 == "ruby" { print $2; exit }')
 asdf reshim ruby "$ruby_version"
 
 if [[ ! -x "$HOME/.cargo/bin/rustup" ]]; then

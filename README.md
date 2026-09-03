@@ -30,7 +30,7 @@ Run the installer:
 ./install.sh
 ```
 
-The script installs Homebrew dependencies, configures Java, Node.js, and Ruby through asdf, installs Rust tools, and links the dotfiles into the home directory with Stow.
+The script installs Homebrew dependencies, configures Java, Node.js, and Ruby through asdf, creates `~/.tool-versions` when it does not already exist, installs Rust tools, and links the dotfiles into the home directory with Stow.
 
 Existing files at the target paths may need to be moved before running the installer.
 
