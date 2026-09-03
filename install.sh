@@ -93,17 +93,12 @@ install_asdf_tool java temurin-21
 install_asdf_tool nodejs
 install_asdf_tool ruby
 
-if ! command -v rustup >/dev/null 2>&1; then
-  curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y
+if [[ ! -x "$HOME/.cargo/bin/rustup" ]]; then
+  curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | \
+    sh -s -- -y --no-modify-path
 fi
 
-if [[ -f "$HOME/.cargo/env" ]]; then
-  # shellcheck source=/dev/null
-  source "$HOME/.cargo/env"
-else
-  export PATH="$HOME/.cargo/bin:$PATH"
-fi
-
+export PATH="$HOME/.cargo/bin:$PATH"
 rustup default stable
 npm install --global @earendil-works/pi-coding-agent
 cargo install cargo-generate cargo-udeps
