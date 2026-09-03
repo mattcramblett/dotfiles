@@ -1,4 +1,3 @@
-tap "homebrew/services"
 tap "libsql/sqld"
 # Cryptography and SSL/TLS Toolkit
 brew "openssl@3"
@@ -44,13 +43,11 @@ brew "zlib"
 cask "ghostty"
 # Nerd Font used by Powerlevel10k
 cask "font-meslo-lg-nerd-font"
-# Cross-platform Git credential storage for multiple hosting providers
-cask "git-credential-manager"
+# Android mobile dev tooling
+cask "android-commandlinetools"
 # GitHub command-line tool
 brew "gh"
 # Code review TUI with vim keybindings
 brew "tuicr"
 # Lightweight and flexible command-line JSON processor
 brew "jq"
-# Android mobile dev tooling
-brew "android-commandlinetools"
