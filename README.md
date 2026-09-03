@@ -56,7 +56,7 @@ Create a sibling Git worktree from the latest `origin/main` or `origin/master` a
 wt <worktree-name>
 ```
 
-For example, `wt feature/login` creates the branch `feature/login`, places the worktree beside the primary repository, and names the tmux window `<repository>-feature-login`.
+For example, `wt feature/login` creates the branch `feature/login`, places the worktree beside the primary repository, and names the tmux window `<repository>-feature-login`. The `mattcramblett/` branch prefix is omitted from local directory and tmux window names, while the full Git branch name is preserved. Override the prefix with the `worktree.branchPrefix` Git configuration value.
 
 ### `wtlist`
 

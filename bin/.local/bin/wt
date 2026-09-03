@@ -46,7 +46,10 @@ fi
 
 repository_dir=$(dirname "$common_dir")
 repository_name=$(basename "$repository_dir")
-worktree_label=${worktree_name//\//-}
+branch_prefix=$(git config --get worktree.branchPrefix || true)
+branch_prefix=${branch_prefix:-"mattcramblett/"}
+worktree_label=${worktree_name#"$branch_prefix"}
+worktree_label=${worktree_label//\//-}
 worktree_dir="$(dirname "$repository_dir")/$repository_name-$worktree_label"
 window_name="$repository_name-$worktree_label"
 

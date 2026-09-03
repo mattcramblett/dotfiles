@@ -140,7 +140,10 @@ if [[ -n "$target_pane" ]]; then
   tmux select-pane -t "$target_pane"
 else
   selected_branch=$(git -C "$selected_path" branch --show-current)
-  window_suffix=${selected_branch:-$(basename "$selected_path")}
+  branch_prefix=$(git config --get worktree.branchPrefix || true)
+  branch_prefix=${branch_prefix:-"mattcramblett/"}
+  window_suffix=${selected_branch#"$branch_prefix"}
+  window_suffix=${window_suffix:-$(basename "$selected_path")}
   window_suffix=${window_suffix//\//-}
   tmux new-window -n "$repository_name-$window_suffix" -c "$selected_path"
 fi
