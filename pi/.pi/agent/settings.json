@@ -9,7 +9,8 @@
     "npm:pi-subagents@^0.38.0",
     "npm:pi-web-access@^0.17.0",
     "npm:@gotgenes/pi-permission-system@$31.0.0",
-    "npm:@juicesharp/rpiv-ask-user-question"
+    "npm:@juicesharp/rpiv-ask-user-question",
+    "npm:pi-background-tasks"
   ],
   "subagents": {
     "disableBuiltins": true,
