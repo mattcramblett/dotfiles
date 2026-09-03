@@ -1,5 +1,4 @@
 tap "homebrew/services"
-tap "jesseduffield/lazydocker"
 tap "libsql/sqld"
 # Cryptography and SSL/TLS Toolkit
 brew "openssl@3"
@@ -19,6 +18,8 @@ brew "git"
 brew "git-delta"
 # Simple terminal UI for git commands
 brew "lazygit"
+# Lazier way to manage everything docker
+brew "lazydocker"
 # Powerful, lightweight programming language
 brew "lua"
 # Ambitious Vim-fork focused on extensibility and agility
@@ -43,3 +44,11 @@ brew "zlib"
 cask "ghostty"
 # Cross-platform Git credential storage for multiple hosting providers
 cask "git-credential-manager"
+# GitHub command-line tool
+brew "gh"
+# Code review TUI with vim keybindings
+brew "tuicr"
+# Lightweight and flexible command-line JSON processor
+brew "jq"
+# Fish shell like syntax highlighting for zsh
+brew "zsh-syntax-highlighting"
