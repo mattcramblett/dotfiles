@@ -42,6 +42,8 @@ brew "yazi"
 brew "zlib"
 # Terminal emulator that uses platform-native UI and GPU acceleration
 cask "ghostty"
+# Nerd Font used by Powerlevel10k
+cask "font-meslo-lg-nerd-font"
 # Cross-platform Git credential storage for multiple hosting providers
 cask "git-credential-manager"
 # GitHub command-line tool

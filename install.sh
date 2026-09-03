@@ -41,8 +41,29 @@ install_asdf_tool() {
   asdf set -u "$name" "$version"
 }
 
+clone_dependency() {
+  local repository=$1
+  local destination=$2
+
+  if [[ -d "$destination/.git" ]]; then
+    return 0
+  fi
+
+  if [[ -e "$destination" ]]; then
+    printf 'Cannot install %s because the destination already exists.\n' "$destination" >&2
+    exit 1
+  fi
+
+  git clone --depth=1 "$repository" "$destination"
+}
+
 load_homebrew
 brew bundle --file="$DOTFILES_DIR/Brewfile"
+
+clone_dependency https://github.com/ohmyzsh/ohmyzsh.git "$HOME/.oh-my-zsh"
+clone_dependency \
+  https://github.com/romkatv/powerlevel10k.git \
+  "$HOME/.oh-my-zsh/custom/themes/powerlevel10k"
 
 stow \
   --dir="$DOTFILES_DIR" \
