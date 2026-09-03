@@ -34,11 +34,14 @@ add_asdf_plugin() {
 
 install_asdf_tool() {
   local name=$1
-  local version_prefix=$2
-  local result_variable=$3
+  local configured_version=$2
+  local version_prefix=$3
+  local result_variable=$4
   local version
 
-  if [[ -n "$version_prefix" ]]; then
+  if [[ -n "$configured_version" ]]; then
+    version=$configured_version
+  elif [[ -n "$version_prefix" ]]; then
     version=$(asdf latest "$name" "$version_prefix")
   else
     version=$(asdf latest "$name")
@@ -91,12 +94,26 @@ add_asdf_plugin java https://github.com/halcyon/asdf-java.git
 add_asdf_plugin nodejs https://github.com/asdf-vm/asdf-nodejs.git
 add_asdf_plugin ruby https://github.com/asdf-vm/asdf-ruby.git
 
+if [[ ( -e "$HOME/.tool-versions" || -L "$HOME/.tool-versions" ) && ! -r "$HOME/.tool-versions" ]]; then
+  printf 'The %s symlink is not readable.\n' "$HOME/.tool-versions" >&2
+  exit 1
+fi
+
+configured_java_version=
+configured_nodejs_version=
+configured_ruby_version=
+if [[ -r "$HOME/.tool-versions" ]]; then
+  configured_java_version=$(awk '$1 == "java" { print $2; exit }' "$HOME/.tool-versions")
+  configured_nodejs_version=$(awk '$1 == "nodejs" { print $2; exit }' "$HOME/.tool-versions")
+  configured_ruby_version=$(awk '$1 == "ruby" { print $2; exit }' "$HOME/.tool-versions")
+fi
+
 java_version=
 nodejs_version=
 ruby_version=
-install_asdf_tool java temurin-21 java_version
-install_asdf_tool nodejs "" nodejs_version
-install_asdf_tool ruby "" ruby_version
+install_asdf_tool java "$configured_java_version" temurin-21 java_version
+install_asdf_tool nodejs "$configured_nodejs_version" "" nodejs_version
+install_asdf_tool ruby "$configured_ruby_version" "" ruby_version
 
 if [[ ! -e "$HOME/.tool-versions" && ! -L "$HOME/.tool-versions" ]]; then
   printf 'java %s\nnodejs %s\nruby %s\n' \
@@ -104,11 +121,20 @@ if [[ ! -e "$HOME/.tool-versions" && ! -L "$HOME/.tool-versions" ]]; then
     >"$HOME/.tool-versions"
 fi
 
-export ASDF_JAVA_VERSION="$java_version"
-export ASDF_NODEJS_VERSION="$nodejs_version"
-export ASDF_RUBY_VERSION="$ruby_version"
+if [[ ! -r "$HOME/.tool-versions" ]]; then
+  printf 'No readable %s file was found.\n' "$HOME/.tool-versions" >&2
+  exit 1
+fi
 
-BUNDLE_GEMFILE="$DOTFILES_DIR/Gemfile" bundle install
+home_nodejs_version=$(awk '$1 == "nodejs" { print $2; exit }' "$HOME/.tool-versions")
+if [[ -z "$home_nodejs_version" ]]; then
+  printf 'No nodejs version is configured in %s.\n' "$HOME/.tool-versions" >&2
+  exit 1
+fi
+
+ASDF_RUBY_VERSION="$ruby_version" \
+  BUNDLE_GEMFILE="$DOTFILES_DIR/Gemfile" \
+  bundle install
 asdf reshim ruby "$ruby_version"
 
 if [[ ! -x "$HOME/.cargo/bin/rustup" ]]; then
@@ -118,5 +144,7 @@ fi
 
 export PATH="$HOME/.cargo/bin:$PATH"
 rustup default stable
-npm install --global @earendil-works/pi-coding-agent
+ASDF_NODEJS_VERSION="$home_nodejs_version" \
+  npm install --global @earendil-works/pi-coding-agent
+asdf reshim nodejs "$home_nodejs_version"
 cargo install cargo-generate cargo-udeps

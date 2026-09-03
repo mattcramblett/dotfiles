@@ -76,6 +76,8 @@ When run outside tmux, the selected worktree path is printed to standard output.
 
 The installer clones Oh My Zsh, Powerlevel10k, zsh-autosuggestions, and zsh-syntax-highlighting, installs the Meslo Nerd Font, and links the managed shell configuration. Powerlevel10k settings live in `zsh/.p10k.zsh`. Machine-specific or sensitive settings belong in the untracked `~/.zshrc.local` file.
 
+The `pi` shell wrapper runs Pi with the Node.js version from `~/.tool-versions` without overriding the Node.js version selected by the current repository.
+
 ### Pi agent picker
 
 Inside tmux, press `Ctrl-Space`, then `a`, to view running Pi agents, inspect their pane output, and jump to a selected agent. Press `Ctrl-R` in the picker to refresh the agent list and preview.
