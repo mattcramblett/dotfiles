@@ -48,7 +48,7 @@ stow \
   --dir="$DOTFILES_DIR" \
   --target="$HOME" \
   --restow \
-  bin ghostty lazygit nvim pi tmux
+  bin ghostty lazygit nvim pi tmux zsh
 
 export ASDF_DATA_DIR="${ASDF_DATA_DIR:-$HOME/.asdf}"
 export PATH="$ASDF_DATA_DIR/shims:$PATH"
