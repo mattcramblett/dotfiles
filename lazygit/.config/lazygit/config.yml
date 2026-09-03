@@ -1,4 +1,15 @@
 git:
-  pagers:
+  diffRenderers:
     - colorArg: always
-      pager: delta --dark --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"
+      command: delta --dark --paging=never --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"
+customCommands:
+  - key: 'D'
+    context: 'files'
+    description: 'View conflict diff in delta'
+    command: 'git diff -- {{.SelectedPath}} | delta --dark --line-numbers --paging=always'
+    output: terminal
+  - key: '<c-p>'
+    context: 'global'
+    command: 'git pull --rebase'
+    description: 'Pull with rebase'
+    loadingText: 'Pulling with rebase...'
