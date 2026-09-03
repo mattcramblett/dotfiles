@@ -46,6 +46,18 @@ To remove a package's links:
 stow --delete --target="$HOME" <package>
 ```
 
+## Custom scripts
+
+### `wt`
+
+Create a sibling Git worktree from the latest `origin/main` or `origin/master` and open it in a new tmux window:
+
+```bash
+wt <worktree-name>
+```
+
+For example, `wt feature/login` creates the branch `feature/login`, places the worktree beside the primary repository, and names the tmux window `<repository>-feature-login`.
+
 ## Features
 
 ### Pi agent picker

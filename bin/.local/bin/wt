@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: wt <worktree-name>
+
+Create a sibling Git worktree from the latest origin/main or origin/master,
+then open it in a new tmux window.
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -ne 1 ]]; then
+  usage >&2
+  exit 2
+fi
+
+if [[ -z "${TMUX:-}" ]]; then
+  printf 'wt must be run inside tmux.\n' >&2
+  exit 1
+fi
+
+for command in git tmux; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    printf 'wt requires %s.\n' "$command" >&2
+    exit 1
+  fi
+done
+
+worktree_name=$1
+if ! git check-ref-format --branch "$worktree_name" >/dev/null 2>&1; then
+  printf 'Invalid worktree or branch name: %s\n' "$worktree_name" >&2
+  exit 1
+fi
+
+if ! common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+  printf 'wt must be run inside a Git repository.\n' >&2
+  exit 1
+fi
+
+repository_dir=$(dirname "$common_dir")
+repository_name=$(basename "$repository_dir")
+worktree_label=${worktree_name//\//-}
+worktree_dir="$(dirname "$repository_dir")/$repository_name-$worktree_label"
+window_name="$repository_name-$worktree_label"
+
+if [[ -e "$worktree_dir" ]]; then
+  printf 'Worktree path already exists: %s\n' "$worktree_dir" >&2
+  exit 1
+fi
+
+if git show-ref --verify --quiet "refs/heads/$worktree_name"; then
+  printf 'Local branch already exists: %s\n' "$worktree_name" >&2
+  exit 1
+fi
+
+if ! git remote get-url origin >/dev/null 2>&1; then
+  printf 'The repository does not have an origin remote.\n' >&2
+  exit 1
+fi
+
+git fetch --prune origin
+
+if git show-ref --verify --quiet refs/remotes/origin/main; then
+  base_branch=origin/main
+elif git show-ref --verify --quiet refs/remotes/origin/master; then
+  base_branch=origin/master
+else
+  printf 'origin does not have a main or master branch.\n' >&2
+  exit 1
+fi
+
+git worktree add -b "$worktree_name" "$worktree_dir" "$base_branch"
+tmux new-window -n "$window_name" -c "$worktree_dir"
