@@ -1,0 +1,53 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    erubi (1.13.1)
+    language_server-protocol (3.17.0.6)
+    logger (1.7.0)
+    prism (1.9.0)
+    rbs (4.2.0)
+      logger
+      prism (>= 1.6.0)
+      tsort
+    ruby-lsp (0.26.11)
+      language_server-protocol (~> 3.17.0)
+      prism (>= 1.2, < 2.0)
+      rbs (>= 3, < 5)
+    sorbet (0.6.13471)
+      sorbet-static (= 0.6.13471)
+    sorbet-static (0.6.13471-aarch64-linux)
+    sorbet-static (0.6.13471-universal-darwin)
+    sorbet-static (0.6.13471-x86_64-linux)
+    thor (1.4.0)
+    tmuxinator (3.4.1)
+      erubi (~> 1.13)
+      thor (~> 1.4.0)
+    tsort (0.2.0)
+
+PLATFORMS
+  aarch64-linux
+  universal-darwin
+  x86_64-linux
+
+DEPENDENCIES
+  ruby-lsp
+  sorbet
+  tmuxinator
+
+CHECKSUMS
+  erubi (1.13.1) sha256=a082103b0885dbc5ecf1172fede897f9ebdb745a4b97a5e8dc63953db1ee4ad9
+  language_server-protocol (3.17.0.6) sha256=5ef2c0c138f8267e1bc631d3328347d354f96724b0af22f2c79516120443b7f0
+  logger (1.7.0) sha256=196edec7cc44b66cfb40f9755ce11b392f21f7967696af15d274dde7edff0203
+  prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
+  rbs (4.2.0) sha256=51f7b886dcc05bc09e10b901daa6a81829f6adc03101d6ca9ea4aac6103e0674
+  ruby-lsp (0.26.11) sha256=4cc8f1587237ff8c9031680b5491df901a82559eeaa1ae96863ffe700b32583d
+  sorbet (0.6.13471) sha256=989e18a4382ae2da1c2aafc0a2f9491f865717c1d0f726b8746e8de13f057536
+  sorbet-static (0.6.13471-aarch64-linux) sha256=9f51f22f7bc84da1fda633b81c39bb0b9f82beee5f09c280f1abdfe56d2cf88c
+  sorbet-static (0.6.13471-universal-darwin) sha256=f8ab547ad97bfaf6f356bc4271e63c38e1e2aad16b12ddda7458a86bf3a05a10
+  sorbet-static (0.6.13471-x86_64-linux) sha256=3cb7145dfd09761c233c72ab18f72fd3aa7d6e1f7f78815ce86311e2681cfe7b
+  thor (1.4.0) sha256=8763e822ccb0f1d7bee88cde131b19a65606657b847cc7b7b4b82e772bcd8a3d
+  tmuxinator (3.4.1) sha256=d81660bb7bf26e1a6849c49cab8db2afcd03608df8defaa541542fd80386e3c2
+  tsort (0.2.0) sha256=9650a793f6859a43b6641671278f79cfead60ac714148aabe4e3f0060480089f
+
+BUNDLED WITH
+  4.0.6

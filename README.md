@@ -10,6 +10,7 @@ Personal macOS development environment managed with [GNU Stow](https://www.gnu.o
 - **Ghostty**: terminal configuration
 - **lazygit**: terminal Git interface
 - **Zsh**: shell environment, aliases, completions, and tool setup
+- **Ruby tools**: Ruby LSP, Sorbet, and Tmuxinator managed through Bundler
 - **bin**: personal command-line tools
 
 Each top-level package mirrors its destination under the home directory. Stow creates the required symlinks without copying the files.

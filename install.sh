@@ -93,6 +93,10 @@ install_asdf_tool java temurin-21
 install_asdf_tool nodejs
 install_asdf_tool ruby
 
+BUNDLE_GEMFILE="$DOTFILES_DIR/Gemfile" bundle install
+ruby_version=$(asdf current ruby | awk '$1 == "ruby" { print $2; exit }')
+asdf reshim ruby "$ruby_version"
+
 if [[ ! -x "$HOME/.cargo/bin/rustup" ]]; then
   curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | \
     sh -s -- -y --no-modify-path
