@@ -3,6 +3,7 @@ agent/mcp-npx-cache.json
 agent/piagent-gateway/
 agent/auth.json
 agent/bin/**/*
+agent/trust.json
 agent/models-store.json
 agent/sessions/**/*
 agent/skills/local/
