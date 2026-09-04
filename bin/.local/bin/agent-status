@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  printf 'Usage: agent-status set <agent> <idle|working|needs-you> | clear\n' >&2
+  exit 2
+}
+
+pane="${TMUX_PANE:-}"
+[[ -n "$pane" ]] || exit 0
+
+unset_option() {
+  tmux set-option -p -u -t "$pane" "$1" 2>/dev/null || true
+}
+
+case "${1:-}" in
+  clear)
+    unset_option "@pi_status"
+    unset_option "@pi_name"
+    unset_option "@pi_cwd"
+    unset_option "@pi_updated_at"
+    unset_option "@pi_pid"
+    ;;
+  set)
+    agent="${2:-}"
+    status="${3:-}"
+    [[ -n "$agent" ]] || usage
+
+    case "$status" in
+      idle|working|needs-you) ;;
+      *) usage ;;
+    esac
+
+    input=$(cat)
+    cwd=$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null || true)
+    [[ -n "$cwd" ]] || cwd="$PWD"
+
+    tmux set-option -p -t "$pane" "@pi_status" "$status"
+    tmux set-option -p -t "$pane" "@pi_name" "$agent:$(basename "$cwd")"
+    tmux set-option -p -t "$pane" "@pi_cwd" "$cwd"
+    tmux set-option -p -t "$pane" "@pi_updated_at" "$(date +%s)"
+    tmux set-option -p -t "$pane" "@pi_pid" "$PPID"
+    ;;
+  *)
+    usage
+    ;;
+esac
