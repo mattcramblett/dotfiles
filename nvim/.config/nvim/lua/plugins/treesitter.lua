@@ -19,6 +19,7 @@ return {
 				"json",
 				"yaml",
 				"bash",
+        "css",
 			})
 
 			-- The main branch no longer enables highlighting for us, so start it
