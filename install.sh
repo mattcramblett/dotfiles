@@ -80,6 +80,9 @@ clone_dependency \
 clone_dependency \
   https://github.com/zsh-users/zsh-syntax-highlighting.git \
   "$HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+clone_dependency \
+  https://github.com/tmux-plugins/tpm.git \
+  "$HOME/.tmux/plugins/tpm"
 
 stow \
   --dir="$DOTFILES_DIR" \
