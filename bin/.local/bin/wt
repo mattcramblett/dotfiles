@@ -4,10 +4,11 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: wt <worktree-name>
+Usage: wt <branch-name>
 
-Create a sibling Git worktree from the latest origin/main or origin/master,
-then open it in a new tmux window.
+Open a local branch in a sibling Git worktree. If it only exists on origin,
+create a local tracking branch. Otherwise, create it from the latest
+origin/main or origin/master. Then open the worktree in a new tmux window.
 EOF
 }
 
@@ -59,25 +60,26 @@ if [[ -e "$worktree_dir" ]]; then
 fi
 
 if git show-ref --verify --quiet "refs/heads/$worktree_name"; then
-  printf 'Local branch already exists: %s\n' "$worktree_name" >&2
-  exit 1
-fi
-
-if ! git remote get-url origin >/dev/null 2>&1; then
-  printf 'The repository does not have an origin remote.\n' >&2
-  exit 1
-fi
-
-git fetch --prune origin
-
-if git show-ref --verify --quiet refs/remotes/origin/main; then
-  base_branch=origin/main
-elif git show-ref --verify --quiet refs/remotes/origin/master; then
-  base_branch=origin/master
+  worktree_args=("$worktree_dir" "$worktree_name")
 else
-  printf 'origin does not have a main or master branch.\n' >&2
-  exit 1
+  if ! git remote get-url origin >/dev/null 2>&1; then
+    printf 'The repository does not have an origin remote.\n' >&2
+    exit 1
+  fi
+
+  git fetch --prune origin
+
+  if git show-ref --verify --quiet "refs/remotes/origin/$worktree_name"; then
+    worktree_args=(-b "$worktree_name" --track "$worktree_dir" "origin/$worktree_name")
+  elif git show-ref --verify --quiet refs/remotes/origin/main; then
+    worktree_args=(-b "$worktree_name" "$worktree_dir" origin/main)
+  elif git show-ref --verify --quiet refs/remotes/origin/master; then
+    worktree_args=(-b "$worktree_name" "$worktree_dir" origin/master)
+  else
+    printf 'origin does not have a main or master branch.\n' >&2
+    exit 1
+  fi
 fi
 
-git worktree add -b "$worktree_name" "$worktree_dir" "$base_branch"
+git worktree add "${worktree_args[@]}"
 tmux new-window -n "$window_name" -c "$worktree_dir"
