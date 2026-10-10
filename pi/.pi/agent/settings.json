@@ -1,11 +1,10 @@
 {
-  "lastChangelogVersion": "0.87.1",
+  "lastChangelogVersion": "1.1.0",
   "theme": "onedark",
   "quietStartup": true,
   "tuiMode": "fullscreen",
   "hideThinkingBlock": true,
   "packages": [
-    "npm:pi-mcp-adapter@2.32.1",
     "npm:pi-subagents@0.38.0",
     "npm:pi-web-access@0.17.1",
     "npm:@gotgenes/pi-permission-system@31.0.1",
