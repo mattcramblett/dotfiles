@@ -10,7 +10,10 @@ Work through these in order.
 
 2. **Fix broken tests.** Run the test suite (or the subset covering the changed code, if the full suite is slow) and fix real failures. If a test fails because the intended behavior changed, update the test. If it fails because the code is wrong, fix the code and flag it in step 6.
 
-3. **Add missing coverage.** Add tests for new code that should reasonably be covered.
+3. **Add missing coverage.** Identify gaps in coverage of the intended current behavior, not tests to mirror each change in the diff.
+   - Test the current contract, not the history of how it changed. A test should still make sense to someone who has never seen this diff.
+   - Update existing tests when their expectations are outdated. Add a new test only when it protects meaningful behavior not already covered.
+   - Do not add assertions solely to prove that removed or replaced behavior is gone. Negative assertions are appropriate when the absence itself is an ongoing requirement, such as preventing sensitive data exposure.
    - Comprehensive, not exhaustive. Cover the meaningful paths, not every possible state.
    - UI tests: test general behavior, not every prop permutation.
    - Pure functions: granular tests are fine here.
