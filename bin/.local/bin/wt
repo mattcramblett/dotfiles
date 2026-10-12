@@ -8,7 +8,8 @@ Usage: wt <branch-name>
 
 Open a local branch in a sibling Git worktree. If it only exists on origin,
 create a local tracking branch. Otherwise, create it from the latest
-origin/main or origin/master. Then open the worktree in a new tmux window.
+origin/main or origin/master. Then open the worktree in a new tmux window
+and run asdf install if the worktree contains a root .tool-versions file.
 EOF
 }
 
@@ -82,4 +83,8 @@ else
 fi
 
 git worktree add "${worktree_args[@]}"
-tmux new-window -n "$window_name" -c "$worktree_dir"
+window_id=$(tmux new-window -P -F '#{window_id}' -n "$window_name" -c "$worktree_dir")
+if [[ -f "$worktree_dir/.tool-versions" ]]; then
+  tmux send-keys -t "$window_id" -l 'asdf install'
+  tmux send-keys -t "$window_id" Enter
+fi
