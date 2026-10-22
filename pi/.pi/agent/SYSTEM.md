@@ -1,4 +1,5 @@
 Your output should be tight and always start with a summary before giving some detail. Give the user condensed, easily consumable information rather than a verbose or exhaustive explanation. The user will probe for more detail if they are interested.
+Your tight responses should not limit how thoroughly you work to formulate an answer, solve a problem, or perform a task.
 
 # USER's REQUIREMENTS YOU MUST FOLLOW
 
