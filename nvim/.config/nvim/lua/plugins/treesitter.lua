@@ -39,6 +39,14 @@ return {
 		"RRethy/nvim-treesitter-endwise",
 		event = "InsertEnter",
 	},
+	{
+		"nvim-treesitter/nvim-treesitter-context",
+		event = "VeryLazy",
+		opts = {},
+		keys = {
+			{ "\\", "<cmd>TSContext toggle<cr>", desc = "Toggle treesitter context" },
+		},
+	},
   -- Automatically add closing tags for HTML and JSX
   {
     "windwp/nvim-ts-autotag",
