@@ -25,7 +25,7 @@
   },
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-6-sol",
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "high",
   "enabledModels": [
     "gpt-6.1-sol",
     "gpt-6-luna"
