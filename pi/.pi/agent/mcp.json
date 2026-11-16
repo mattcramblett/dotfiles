@@ -2,6 +2,9 @@
   "mcpServers": {
     "atlassian": {
       "url": "https://mcp.atlassian.com/v2/mcp"
+    },
+    "datadog": {
+      "url": "https://mcp.datadoghq.com/v1/mcp"
     }
   }
 }
