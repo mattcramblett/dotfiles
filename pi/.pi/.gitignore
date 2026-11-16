@@ -1,5 +1,7 @@
 agent/mcp-cache.json
 agent/mcp-npx-cache.json
+agent/mcp-auth.json
+agent/web-search-cache/
 agent/piagent-gateway/
 agent/auth.json
 agent/bin/**/*
