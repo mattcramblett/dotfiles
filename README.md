@@ -52,13 +52,25 @@ stow --delete --target="$HOME" <package>
 
 ### `wt`
 
-Create a sibling Git worktree from the latest `origin/main` or `origin/master` and open it in a new tmux window:
+From inside tmux, open a local or remote branch in a sibling Git worktree, or create a new branch from the latest `origin/main` or `origin/master`, then switch to a named tmux session:
 
 ```bash
 wt <worktree-name>
 ```
 
-For example, `wt feature/login` creates the branch `feature/login`, places the worktree beside the primary repository, and names the tmux window `<repository>-feature-login`. The `mattcramblett/` branch prefix is omitted from local directory and tmux window names, while the full Git branch name is preserved. Override the prefix with the `worktree.branchPrefix` Git configuration value.
+For example, `wt feature/login` creates the branch `feature/login`, places the worktree beside the primary repository, and names the tmux session `<repository>-feature-login`. The `mattcramblett/` branch prefix is omitted from local directory and tmux session names, while the full Git branch name is preserved. Override the prefix with the `worktree.branchPrefix` Git configuration value. Dots and colons in session names become underscores.
+
+If the worktree has a root `.tool-versions` file, `wt` waits for `asdf install` to succeed before creating the session. If installation fails, it exits with an error and preserves the worktree for recovery.
+
+For agents or when you want to stay in your current session:
+
+```bash
+wt --background mattcramblett/SERVEBX-100
+```
+
+This creates a detached session without switching or attaching any terminal, and works outside tmux too. It still waits for setup to finish and reports the worktree path and session name on success. The `ticket-work` skill uses this mode.
+
+Run the worktree command tests with `python3 -m unittest discover -s tests -p 'test_wt.py'`.
 
 ### `wtlist`
 
