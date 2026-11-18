@@ -39,8 +39,26 @@ elif command == "tmux":
     if args[0] == "has-session":
         sys.exit(0 if os.environ.get("WT_TEST_SESSION_EXISTS") else 1)
     elif args[0] == "new-session":
-        sys.exit(1) if os.environ.get("WT_TEST_SESSION_FAIL") else print("$42")
-    else:
+        if os.environ.get("WT_TEST_SESSION_FAIL"):
+            sys.exit(1)
+        print("$42 %21" if args[args.index("-F") + 1] == "#{session_id} #{pane_id}" else "$42")
+    elif args[0] == "display-message":
+        if os.environ.get("WT_TEST_PANE_MISSING"):
+            sys.exit(1)
+        print({
+            "#{pane_id} #{window_width} #{window_height}": "%7 160 60",
+            "#{session_id} #{session_windows} #{window_panes}":
+                os.environ.get("WT_TEST_SOURCE_INFO", "$1 1 2"),
+            "#{session_path}": os.environ["WT_TEST_REPO"],
+        }[args[-1]])
+    elif args[0] == "split-window":
+        if os.environ.get("WT_TEST_SPLIT_FAIL"):
+            sys.exit(1)
+        print("%22")
+    elif args[0] == "join-pane":
+        if os.environ.get("WT_TEST_JOIN_FAIL"):
+            sys.exit(1)
+    elif args[0] not in ("set-option", "select-pane", "new-window"):
         assert args == ["switch-client", "-t", "$42"], args
 elif command == "asdf":
     assert args == ["install"], args
@@ -59,7 +77,7 @@ class WorktreeTests(unittest.TestCase):
         self.log = root / "calls.jsonl"
         binaries = root / "bin"
         binaries.mkdir()
-        for name in ("git", "tmux", "asdf"):
+        for name in ("git", "tmux", "asdf", "nvim", "lazygit"):
             stub = binaries / name
             stub.write_text(f"#!{sys.executable}\n" + STUB)
             stub.chmod(0o755)
@@ -195,7 +213,7 @@ class WorktreeTests(unittest.TestCase):
             with self.subTest(args=args):
                 result = self.run_wt(*args, TMUX="")
                 self.assertEqual(result.returncode, 2)
-                self.assertIn("Usage: wt [--background] <branch-name>", result.stderr)
+                self.assertIn("Usage: wt [--background] [--move-pane <pane-id>] <branch-name>", result.stderr)
                 self.assertFalse(self.log.exists())
 
     def test_background_help_does_not_require_tmux(self):
@@ -203,6 +221,113 @@ class WorktreeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--background leaves the session detached", result.stdout)
         self.assertFalse(self.log.exists())
+
+    def test_move_pane_builds_layout_before_moving_exact_pane(self):
+        result = self.run_wt("--background", "--move-pane", "%7", "feature/login",
+                             WT_TEST_TOOL_VERSIONS="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = [call[1] for call in self.calls("tmux")]
+        self.assertEqual(calls, [
+            ["display-message", "-p", "-t", "%7", "#{pane_id} #{window_width} #{window_height}"],
+            ["has-session", "-t", "=repo-feature-login"],
+            ["new-session", "-d", "-P", "-F", "#{session_id} #{pane_id}",
+             "-s", "repo-feature-login", "-c", str(self.worktree), "-x", "160", "-y", "60", "nvim"],
+            ["set-option", "-t", "$42", "@worktree_path", str(self.worktree)],
+            ["split-window", "-d", "-v", "-l", "40%", "-P", "-F", "#{pane_id}",
+             "-t", "%21", "-c", str(self.worktree), "lazygit"],
+            ["display-message", "-p", "-t", "%7", "#{session_id} #{session_windows} #{window_panes}"],
+            ["join-pane", "-d", "-h", "-l", "60%", "-s", "%7", "-t", "%22"],
+            ["select-pane", "-t", "%7"],
+        ])
+        commands = [call[0] for call in self.calls()]
+        self.assertLess(commands.index("asdf"), len(commands) - 6)
+        self.assertIn("Tmux session: repo-feature-login", result.stdout)
+
+    def test_move_pane_preserves_other_source_windows_without_replacement(self):
+        result = self.run_wt("--background", "--move-pane", "%7", "feature/login",
+                             WT_TEST_SOURCE_INFO="$1 2 1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("new-window", [call[1][0] for call in self.calls("tmux")])
+
+    def test_move_last_pane_preserves_source_session_with_a_shell_window(self):
+        result = self.run_wt("--background", "--move-pane", "%7", "feature/login",
+                             WT_TEST_SOURCE_INFO="$1 1 1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = [call[1] for call in self.calls("tmux")]
+        replacement = ["new-window", "-d", "-t", "$1:", "-c", str(self.repo)]
+        self.assertIn(replacement, calls)
+        self.assertLess(calls.index(replacement), next(i for i, c in enumerate(calls) if c[0] == "join-pane"))
+
+    def test_move_pane_foreground_switches_only_after_layout_is_ready(self):
+        result = self.run_wt("--move-pane", "%7", "feature/login")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.calls("tmux")[-1][1], ["switch-client", "-t", "$42"])
+
+    def test_move_pane_accepts_reordered_flags(self):
+        result = self.run_wt("--move-pane", "%7", "--background", "feature/login")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.calls("tmux")[-1][1][0], "select-pane")
+
+    def test_move_pane_requires_exact_pane_id(self):
+        for args in [("--move-pane",), ("--move-pane", "main:1", "feature/login"),
+                     ("--move-pane", "%x", "feature/login")]:
+            with self.subTest(args=args):
+                result = self.run_wt(*args)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("requires an exact tmux pane ID", result.stderr)
+                self.assertFalse(self.log.exists())
+
+    def test_move_pane_requires_tmux_even_with_background(self):
+        result = self.run_wt("--background", "--move-pane", "%7", "feature/login", TMUX="")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.log.exists())
+
+    def test_move_missing_pane_fails_before_creating_worktree(self):
+        result = self.run_wt("--background", "--move-pane", "%7", "feature/login",
+                             WT_TEST_PANE_MISSING="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Cannot identify tmux pane", result.stderr)
+        self.assertFalse(self.worktree.exists())
+        self.assertEqual(self.calls("git"), [])
+
+    def test_move_requires_editor_and_lazygit_before_creating_worktree(self):
+        for name in ("nvim", "lazygit"):
+            with self.subTest(command=name):
+                binary = self.repo.parent / "bin" / name
+                contents = binary.read_text()
+                binary.unlink()
+                try:
+                    result = self.run_wt("--background", "--move-pane", "%7", "feature/login",
+                                         PATH=str(binary.parent) + ":/usr/bin:/bin")
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(f"wt requires {name}", result.stderr)
+                    self.assertFalse(self.worktree.exists())
+                    self.assertFalse(self.log.exists())
+                finally:
+                    binary.write_text(contents)
+                    binary.chmod(0o755)
+
+    def test_move_setup_failures_never_move_pane_or_report_success(self):
+        for failure in ("WT_TEST_ADD_FAIL", "WT_TEST_ASDF_EXIT", "WT_TEST_SESSION_FAIL", "WT_TEST_SPLIT_FAIL"):
+            with self.subTest(failure=failure):
+                result = self.run_wt("--background", "--move-pane", "%7", "feature/login",
+                                     WT_TEST_TOOL_VERSIONS="1", **{failure: "1"})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("join-pane", [call[1][0] for call in self.calls("tmux")])
+                self.assertNotIn("Tmux session:", result.stdout)
+                if self.worktree.exists():
+                    for child in self.worktree.iterdir():
+                        child.unlink()
+                    self.worktree.rmdir()
+                self.log.unlink()
+
+    def test_move_join_failure_does_not_report_success(self):
+        result = self.run_wt("--background", "--move-pane", "%7", "feature/login",
+                             WT_TEST_JOIN_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.calls("tmux")[-1][1][0], "join-pane")
+        self.assertTrue(self.worktree.is_dir())
+        self.assertNotIn("Tmux session:", result.stdout)
 
     def test_still_requires_tmux(self):
         result = self.run_wt(TMUX="")

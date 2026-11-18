@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: wt [--background] <branch-name>
+Usage: wt [--background] [--move-pane <pane-id>] <branch-name>
 
 Open a local branch in a sibling Git worktree. If it only exists on origin,
 create a local tracking branch. Otherwise, create it from the latest
@@ -13,36 +13,71 @@ root .tool-versions file, then open it in a named tmux session.
 
 --background leaves the session detached without switching your terminal.
 It also works outside tmux. Setup still runs synchronously.
+
+--move-pane moves an existing tmux pane below Neovim and beside lazygit.
+The running process is preserved, including its original working directory.
+New windows start in the worktree. Worktree-aware tmux bindings also root
+new splits there. Combine with --background to leave your terminal on
+its current session.
 EOF
 }
 
 background=false
-if [[ "${1:-}" == "--background" ]]; then
-  background=true
-  shift
-fi
-
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-  exit 0
-fi
+move_pane=
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --background)
+      background=true
+      shift
+      ;;
+    --move-pane)
+      if [[ $# -lt 2 || ! "$2" =~ ^%[0-9]+$ ]]; then
+        printf '%s\n' '--move-pane requires an exact tmux pane ID, such as %3.' >&2
+        exit 2
+      fi
+      move_pane=$2
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *) break ;;
+  esac
+done
 
 if [[ $# -ne 1 ]]; then
   usage >&2
   exit 2
 fi
 
-if [[ "$background" == false && -z "${TMUX:-}" ]]; then
+if [[ ( "$background" == false || -n "$move_pane" ) && -z "${TMUX:-}" ]]; then
   printf 'wt must be run inside tmux.\n' >&2
   exit 1
 fi
 
-for command in git tmux; do
+commands=(git tmux)
+if [[ -n "$move_pane" ]]; then
+  commands+=(nvim lazygit)
+fi
+for command in "${commands[@]}"; do
   if ! command -v "$command" >/dev/null 2>&1; then
     printf 'wt requires %s.\n' "$command" >&2
     exit 1
   fi
 done
+
+if [[ -n "$move_pane" ]]; then
+  if ! source_info=$(tmux display-message -p -t "$move_pane" '#{pane_id} #{window_width} #{window_height}'); then
+    printf 'Cannot identify tmux pane: %s\n' "$move_pane" >&2
+    exit 1
+  fi
+  read -r source_pane window_width window_height <<<"$source_info"
+  if [[ "$source_pane" != "$move_pane" ]]; then
+    printf 'Cannot identify tmux pane: %s\n' "$move_pane" >&2
+    exit 1
+  fi
+fi
 
 worktree_name=$1
 if ! git check-ref-format --branch "$worktree_name" >/dev/null 2>&1; then
@@ -104,7 +139,25 @@ if [[ -f "$worktree_dir/.tool-versions" ]]; then
     exit 1
   fi
 fi
-session_id=$(tmux new-session -d -P -F '#{session_id}' -s "$session_name" -c "$worktree_dir")
+if [[ -n "$move_pane" ]]; then
+  session_info=$(tmux new-session -d -P -F '#{session_id} #{pane_id}' \
+    -s "$session_name" -c "$worktree_dir" -x "$window_width" -y "$window_height" nvim)
+  read -r session_id editor_pane <<<"$session_info"
+  tmux set-option -t "$session_id" @worktree_path "$worktree_dir"
+  git_pane=$(tmux split-window -d -v -l '40%' -P -F '#{pane_id}' \
+    -t "$editor_pane" -c "$worktree_dir" lazygit)
+
+  source_info=$(tmux display-message -p -t "$move_pane" '#{session_id} #{session_windows} #{window_panes}')
+  read -r source_session source_windows source_panes <<<"$source_info"
+  if [[ "$source_windows" == 1 && "$source_panes" == 1 ]]; then
+    source_path=$(tmux display-message -p -t "$move_pane" '#{session_path}')
+    tmux new-window -d -t "$source_session:" -c "$source_path"
+  fi
+  tmux join-pane -d -h -l '60%' -s "$move_pane" -t "$git_pane"
+  tmux select-pane -t "$move_pane"
+else
+  session_id=$(tmux new-session -d -P -F '#{session_id}' -s "$session_name" -c "$worktree_dir")
+fi
 if [[ "$background" == true ]]; then
   printf 'Worktree: %s\nTmux session: %s\n' "$worktree_dir" "$session_name"
 else

@@ -68,9 +68,21 @@ For agents or when you want to stay in your current session:
 wt --background mattcramblett/SERVEBX-100
 ```
 
-This creates a detached session without switching or attaching any terminal, and works outside tmux too. It still waits for setup to finish and reports the worktree path and session name on success. The `ticket-work` skill uses this mode.
+This creates a detached session without switching or attaching any terminal, and works outside tmux too. It still waits for setup to finish and reports the worktree path and session name on success.
 
-Run the worktree command tests with `python3 -m unittest discover -s tests -p 'test_wt.py'`.
+To move a running agent's pane into the new session:
+
+```bash
+wt --background --move-pane "$TMUX_PANE" mattcramblett/SERVEBX-100
+```
+
+Run this from the agent's command tool, not from a different pane. The first window has Neovim across the top (60% height), with lazygit on the bottom left and the existing agent on the bottom right. The agent gets 60% of the bottom row's width. The process and conversation stay alive; no resume command or second agent is needed. Your terminal stays on its current session. Other panes are untouched, and a replacement shell window is created if moving the pane would otherwise destroy the original session.
+
+Neovim, lazygit, and new windows start in the worktree. With the updated tmux configuration, new splits also use the worktree even when split from the moved agent. Moving a process cannot change its working directory, so the agent must use explicit worktree working directories and absolute file paths. Reload existing tmux servers with `tmux source-file ~/.config/tmux/tmux.conf` to activate the new window and split bindings.
+
+The `ticket-work` skill moves its coordinating pane into the first new worktree session, then names that session after the ticket and task. It does not rename your main session or move the pane again for additional PRs. Outside tmux, it uses plain `--background` instead.
+
+Run the worktree command tests with `python3 -m unittest discover -s tests -p 'test_wt*.py'`. The layout tests use a separate tmux server and stub editor and lazygit processes, without touching your sessions.
 
 ### `wtlist`
 
