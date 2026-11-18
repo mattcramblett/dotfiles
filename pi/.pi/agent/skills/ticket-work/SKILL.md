@@ -1,11 +1,11 @@
 ---
 name: ticket-work
-description: Take a Jira ticket or user-described task through context gathering, PR planning, implementation in isolated worktrees, verification, and one or more review-ready pull requests. Use when explicitly asked to run ticket-work or take a ticket or task through to PRs.
+description: Take a Jira ticket or user-described task through context gathering, PR planning, implementation in isolated worktrees, verification, and one or more verified draft pull requests. Use when explicitly asked to run ticket-work or take a ticket or task through to PRs.
 ---
 
 # Ticket work
 
-Deliver the requested outcome as one or more review-ready PRs. Default to one PR. Keep the user involved in decisions that affect correctness or safety, not routine execution.
+Deliver the requested outcome as one or more fully verified draft PRs. Default to one PR. Draft status is a publication setting, not permission to skip verification or publish unfinished work. Keep the user involved in decisions that affect correctness or safety, not routine execution.
 
 ## Scope and authority
 
@@ -64,18 +64,18 @@ For each PR, compare the result against its acceptance criteria and intended bas
 3. Do one focused self-review of the full incremental diff against the intended PR base. When showing a diff, use `git diff --no-color <base>...HEAD | delta --paging=never --line-numbers`. Check for likely bugs, missed requirements or callers, unsafe data or security behavior, significant performance regressions, missing meaningful tests, and unintended files or changes. Also inspect the combined change for integration issues.
 4. Fix clear high-priority defects within scope, then rerun affected checks. Ask only when a fix requires a material product, safety, or scope decision. Do not turn this into repeated speculative review rounds, style polishing, or a catalog of remote what-ifs. Stop once the requirements and meaningful checks are satisfied and no known high-priority defect remains.
 
-## 5. Publish only review-ready work
+## 5. Publish verified work as draft PRs
 
-- Do not push work-in-progress branches or open placeholder or draft PRs to save progress or trigger checks. Local commits and worktrees are the checkpoint until the branch is ready for a reviewer.
+- Do not push work-in-progress branches or open placeholder PRs to save progress or trigger checks. Local commits and worktrees are the checkpoint until the branch is ready for a reviewer.
 - Before each push, confirm the repository, remote, branch, PR base, intended commits and diff, validation results, and absence of secrets or unrelated changes. Resolve known high-priority defects before publication. Push only the task branch, never directly to the integration branch.
-- Publish predecessors before their dependents. Part 1 targets the normal integration branch. Part 2 targets part 1's branch, part 3 targets part 2's branch, and so on. Open ordinary ready-for-review PRs for all completed parts, not only the first. This branch/base chain is intentional, but do not enroll the PRs in GitHub's PR stack feature or a stack-management workflow.
+- Publish predecessors before their dependents. Part 1 targets the normal integration branch. Part 2 targets part 1's branch, part 3 targets part 2's branch, and so on. Open draft PRs for all completed parts, not only the first. Use `gh pr create --draft` or the equivalent draft flag in the authenticated tool. Do not mark PRs ready for review unless the user explicitly requests it. This branch/base chain is intentional, but do not enroll the PRs in GitHub's PR stack feature or a stack-management workflow.
 - Use the naming conventions above. Respect repository PR templates and the `write-pr-description` skill when available. Explain what changes and why in plain English. Link the Jira ticket when present. Include only important reviewer context, required validation evidence, and dependency or merge-order information. For a dependent PR, link its predecessor and make the incremental scope clear. Do not manufacture test results or fill optional sections with boilerplate.
-- Verify the remote branch tip matches the intended local commit and inspect each created PR's URL, head, base, title, body, and ready-for-review state. Check for an existing PR before creating another, including after an uncertain command result. Do not assume a failed response means publication did not happen.
+- Verify the remote branch tip matches the intended local commit and inspect each created PR's URL, head, base, title, body, and draft state (`isDraft` must be `true`). Check for an existing PR before creating another, including after an uncertain command result. Do not assume a failed response means publication did not happen.
 - If remote CI is triggered, inspect its result before declaring completion. Do not report pending checks as passed. Fix failures attributable to this work, revalidate, and push only review-ready fixes. Report material unrelated or inaccessible CI blockers accurately.
 - Leave merging, later rebases and retargeting after predecessor merges, and any optional GitHub stack setup to the user. Preserve branches and worktrees containing useful work. Do not remove existing user worktrees or delete branches as cleanup.
 
 ## 6. Report only what deserves attention
 
-Lead with a compact list of the PR links in review order. Add only items that require the user's action or are worth reconsidering: unresolved correctness or safety decisions, material limitations, blocked validation or CI, necessary rollout steps, and non-obvious merge sequencing. Make the required action clear.
+Lead with a compact list of the draft PR links in review order. Add only items that require the user's action or are worth reconsidering: unresolved correctness or safety decisions, material limitations, blocked validation or CI, necessary rollout steps, and non-obvious merge sequencing. Make the required action clear.
 
 Do not include a work diary, file inventory, routine passing-check list, speculative concerns, style nits, or general good-to-know information. Put necessary test evidence in the PR rather than duplicating it in chat. If everything is ready and no decision or warning remains, the PR links are enough. If blocked before publication, state the specific blocker and decision needed, and clearly distinguish published PRs from local-only work. Never claim the task is complete when required work remains.
