@@ -20,8 +20,15 @@ with open(os.environ["WT_TEST_LOG"], "a") as log:
     log.write(json.dumps([command, args, os.getcwd()]) + "\n")
 
 if command == "git":
+    directory = args[1] if args[0] == "-C" else os.getcwd()
+    if args[0] == "-C":
+        args = args[2:]
     if args[0] == "rev-parse":
-        print(os.environ["WT_TEST_REPO"] + "/.git")
+        print(directory if args[-1] == "--show-toplevel" else os.environ["WT_TEST_REPO"] + "/.git")
+    elif args[:2] == ["worktree", "list"]:
+        repo = Path(os.environ["WT_TEST_REPO"])
+        for path in [repo, *repo.parent.glob(repo.name + "-*")]:
+            print(f"worktree {path}\0branch refs/heads/feature/login\0\0", end="")
     elif args[0] == "config":
         print(os.environ.get("WT_TEST_PREFIX", "mattcramblett/"))
     elif args[0] == "show-ref":
@@ -45,7 +52,13 @@ elif command == "tmux":
     elif args[0] == "display-message":
         if os.environ.get("WT_TEST_PANE_MISSING"):
             sys.exit(1)
+        calls = [json.loads(line) for line in Path(os.environ["WT_TEST_LOG"]).read_text().splitlines()]
+        paths = [call[1][-1] for call in calls if call[0] == "tmux" and call[1][0] == "set-option" and "@worktree_path" in call[1]]
+        names = [call[1][call[1].index("-s") + 1] for call in calls if call[0] == "tmux" and call[1][0] == "new-session"]
         print({
+            "#{@worktree_path}": paths[-1] if paths else "",
+            "#{session_name}": names[-1] if names else "",
+            "#{@worktree_agent}": os.environ.get("WT_TEST_AGENT", ""),
             "#{pane_id} #{window_width} #{window_height}": "%7 160 60",
             "#{session_id} #{session_windows} #{window_panes}":
                 os.environ.get("WT_TEST_SOURCE_INFO", "$1 1 2"),
@@ -85,6 +98,7 @@ class WorktreeTests(unittest.TestCase):
             **os.environ,
             "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
             "TMUX": "test-session",
+            "XDG_STATE_HOME": str(root / "state"),
             "WT_TEST_LOG": str(self.log),
             "WT_TEST_REPO": str(self.repo),
             "WT_TEST_REFS": json.dumps(["refs/remotes/origin/main"]),
@@ -101,7 +115,10 @@ class WorktreeTests(unittest.TestCase):
 
     def calls(self, command=None):
         calls = [json.loads(line) for line in self.log.read_text().splitlines()]
-        return [call for call in calls if command is None or call[0] == command]
+        metadata_queries = ("#{@worktree_path}", "#{session_name}", "#{@worktree_agent}")
+        return [call for call in calls if (command is None or call[0] == command)
+                and not (call[0] == "tmux" and call[1][0] == "display-message"
+                         and call[1][-1] in metadata_queries)]
 
     def test_installs_in_worktree_before_creating_and_switching_session(self):
         result = self.run_wt(WT_TEST_TOOL_VERSIONS="1")
@@ -113,6 +130,7 @@ class WorktreeTests(unittest.TestCase):
                 ["has-session", "-t", "=repo-feature-login"],
                 ["new-session", "-d", "-P", "-F", "#{session_id}",
                  "-s", "repo-feature-login", "-c", str(self.worktree)],
+                ["set-option", "-t", "$42", "@worktree_path", str(self.worktree)],
                 ["switch-client", "-t", "$42"],
             ],
         )
@@ -132,6 +150,18 @@ class WorktreeTests(unittest.TestCase):
         self.assertIn(str(self.worktree), result.stderr)
         self.assertTrue(self.worktree.is_dir())
         self.assertEqual(len(self.calls("tmux")), 1)
+        registry = Path(self.env["XDG_STATE_HOME"]) / "worktrees/registry.json"
+        self.assertEqual(json.loads(registry.read_text())["repositories"], [str(self.repo / ".git")])
+
+    def test_registry_failure_does_not_interrupt_worktree_creation(self):
+        blocked = self.repo.parent / "blocked-state"
+        blocked.write_text("preserve")
+        result = self.run_wt(XDG_STATE_HOME=str(blocked))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.worktree.is_dir())
+        self.assertEqual(self.calls("tmux")[-1][1], ["switch-client", "-t", "$42"])
+        self.assertIn("Cannot update", result.stderr)
+        self.assertEqual(blocked.read_text(), "preserve")
 
     def test_existing_session_is_rejected_before_creating_worktree(self):
         result = self.run_wt(WT_TEST_SESSION_EXISTS="1")
@@ -143,7 +173,7 @@ class WorktreeTests(unittest.TestCase):
     def test_session_name_normalizes_dots_and_keeps_directory_name(self):
         result = self.run_wt("mattcramblett/feature.v2/login")
         self.assertEqual(result.returncode, 0, result.stderr)
-        args = self.calls("tmux")[-2][1]
+        args = next(call[1] for call in self.calls("tmux") if call[1][0] == "new-session")
         self.assertEqual(args[args.index("-s") + 1], "repo-feature_v2-login")
         self.assertEqual(args[args.index("-c") + 1], str(self.repo.parent / "repo-feature.v2-login"))
 
@@ -178,9 +208,10 @@ class WorktreeTests(unittest.TestCase):
         result = self.run_wt("--background", "feature/login", WT_TEST_TOOL_VERSIONS="1")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.calls("asdf"), [["asdf", ["install"], str(self.worktree)]])
-        self.assertEqual(self.calls("tmux")[-1][1][0], "new-session")
-        self.assertEqual(len(self.calls("tmux")), 2)
-        self.assertEqual([call[0] for call in self.calls()][-2:], ["asdf", "tmux"])
+        self.assertEqual(self.calls("tmux")[-1][1][0], "set-option")
+        self.assertEqual(len(self.calls("tmux")), 3)
+        commands = [call[0] for call in self.calls()]
+        self.assertLess(commands.index("asdf"), len(commands) - 2)
         self.assertIn(f"Worktree: {self.worktree}", result.stdout)
         self.assertIn("Tmux session: repo-feature-login", result.stdout)
 
@@ -188,8 +219,8 @@ class WorktreeTests(unittest.TestCase):
         result = self.run_wt("--background", "feature/login", TMUX="")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(self.worktree.is_dir())
-        self.assertEqual(self.calls("tmux")[-1][1][0], "new-session")
-        self.assertEqual(len(self.calls("tmux")), 2)
+        self.assertEqual(self.calls("tmux")[-1][1][0], "set-option")
+        self.assertEqual(len(self.calls("tmux")), 3)
 
     def test_background_install_failure_does_not_report_success(self):
         result = self.run_wt(
@@ -242,6 +273,12 @@ class WorktreeTests(unittest.TestCase):
         commands = [call[0] for call in self.calls()]
         self.assertLess(commands.index("asdf"), len(commands) - 6)
         self.assertIn("Tmux session: repo-feature-login", result.stdout)
+
+    def test_move_pane_remembers_the_source_agent(self):
+        result = self.run_wt("--background", "--move-pane", "%7", "feature/login", WT_TEST_AGENT="claude")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        registry = Path(self.env["XDG_STATE_HOME"]) / "worktrees/registry.json"
+        self.assertEqual(json.loads(registry.read_text())["worktrees"][str(self.worktree)]["agent"], "claude")
 
     def test_move_pane_preserves_other_source_windows_without_replacement(self):
         result = self.run_wt("--background", "--move-pane", "%7", "feature/login",

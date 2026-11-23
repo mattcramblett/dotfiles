@@ -82,7 +82,55 @@ Neovim, lazygit, and new windows start in the worktree. With the updated tmux co
 
 The `ticket-work` skill moves its coordinating pane into the first new worktree session, then names that session after the ticket and task. It does not rename your main session or move the pane again for additional PRs. Outside tmux, it uses plain `--background` instead.
 
-Run the worktree command tests with `python3 -m unittest discover -s tests -p 'test_wt*.py'`. The layout tests use a separate tmux server and stub editor and lazygit processes, without touching your sessions.
+`wt` automatically registers the repository for `wta`, even if later setup fails. Registry errors are reported without interrupting worktree creation.
+
+Run the command tests with `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests`. The layout tests use separate tmux servers and stub editor and agent processes, without touching your sessions.
+
+### `wta`
+
+Find a worktree across registered repositories and attach to its tmux workspace:
+
+```bash
+wta                              # Open the searchable picker
+wta SERVEBX-100                   # Start with a ticket, task, branch, or repo search
+wta --path /path/to/worktree      # Attach directly, without fzf
+wta --path /path/to/worktree --agent pi
+wta --list                       # JSON output for scripts
+```
+
+Register each existing repository once, from any directory. All its current worktrees appear in the picker, including the primary checkout. Future worktrees created with `wt` register automatically. There is no home-directory or code-directory scan.
+
+```bash
+wta --register /path/to/repository
+```
+
+The picker shows the repository, task/branch, last-used agent, running/stopped state, and path, with a Git status preview. Running workspaces appear first, then recently used worktrees. Cancel without changing anything.
+
+Selection reuses a running session at that worktree, leaving its panes and processes untouched. Otherwise, it recreates the Neovim/lazygit/agent layout described above, focused on the agent pane. It switches sessions inside tmux and attaches outside tmux. It does not create branches or worktrees, fetch, or run setup again. An unrelated session with the same name is never taken over.
+
+The managed `pi` shell wrapper remembers the last agent invoked in a worktree. An optional `claude` wrapper does the same on machines where Claude is installed; Claude is not required or installed by this repository. The agent starts normally, not with an automatic conversation-resume command. Use its own resume UI if desired. If no agent is known or its command is unavailable, the pane opens a shell. Exiting an agent also leaves a shell. `--agent` remembers an override; it never replaces a running process in an existing workspace. Agent names must be simple commands such as `pi` or `claude`, not paths or commands with arguments.
+
+Other agents can use the shared registration command, including from their launch wrapper:
+
+```bash
+wt-workspace remember-agent some-agent
+wt-workspace remember-agent some-agent --path /path/to/worktree
+```
+
+Worktree-tagged tmux sessions take precedence over an agent's original directory, so the agent moved by `/ticket-work` is tracked correctly. Task-session renames are remembered through a tmux hook and reconciled when listing/attaching. Metadata lives under `${XDG_STATE_HOME:-$HOME/.local/state}/worktrees/`, outside this repository. Git remains authoritative for current worktrees. Missing/deleted worktrees are skipped, and registry failures do not block direct attachment.
+
+Existing sessions without metadata fall back to their session directory and a branch-derived name. Agents launched without the managed wrappers or registration command are not inferred. Conversation history and resume IDs are not recorded. This recreates a workspace after reboot, not live processes or in-flight agent work.
+
+Python 3 must be available through your asdf setup; it is not installed through Homebrew. Link the commands and shared library, load the wrappers in new shells, and reload the tmux hook and bindings:
+
+```bash
+stow --restow --target="$HOME" bin zsh tmux
+exec zsh
+# Run inside tmux:
+tmux source-file ~/.config/tmux/tmux.conf
+```
+
+The commands require Python 3 and Git. Attachment requires tmux; creating the layout also requires Neovim, lazygit, and Zsh. Only the interactive picker requires fzf. Shell startup customizations should preserve the managed wrappers if automatic tracking is desired.
 
 ### `wtlist`
 

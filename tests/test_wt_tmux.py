@@ -30,6 +30,7 @@ class WorktreeLayoutTests(unittest.TestCase):
         self.env = {
             **os.environ,
             "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
+            "XDG_STATE_HOME": str(self.root / "state"),
             "WT_TEST_LOG": str(self.root / "calls.jsonl"),
             "WT_TEST_REPO": str(self.repo),
             "WT_TEST_REFS": json.dumps(["refs/heads/feature/login"]),

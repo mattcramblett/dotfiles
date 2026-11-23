@@ -3,6 +3,19 @@ export PAGER="delta"
 export GIT_PAGER="delta"
 export LG_CONFIG_FILE="$HOME/.config/lazygit/config.yml"
 
+_wt_remember_agent() {
+  if (( $+commands[wt-workspace] )); then
+    command wt-workspace remember-agent "$1" </dev/null || true
+  fi
+}
+
+claude() {
+  if (( $+commands[claude] )); then
+    _wt_remember_agent claude
+  fi
+  command claude "$@"
+}
+
 # === pi ===
 pi() {
   local node_version
@@ -30,6 +43,8 @@ pi() {
     printf 'Pi is not installed for Node.js %s.\n' "$node_version" >&2
     return 1
   fi
+
+  _wt_remember_agent pi
 
   if [[ -n "$PI_DEFAULT_MODEL" ]]; then
     env -u ASDF_NODEJS_VERSION \

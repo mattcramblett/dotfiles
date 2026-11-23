@@ -56,7 +56,10 @@ if [[ ( "$background" == false || -n "$move_pane" ) && -z "${TMUX:-}" ]]; then
   exit 1
 fi
 
-commands=(git tmux)
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+workspace="$script_dir/wt-workspace"
+
+commands=(git tmux python3)
 if [[ -n "$move_pane" ]]; then
   commands+=(nvim lazygit)
 fi
@@ -66,6 +69,11 @@ for command in "${commands[@]}"; do
     exit 1
   fi
 done
+
+if [[ ! -x "$workspace" ]]; then
+  printf 'wt requires %s. Restow the bin package.\n' "$workspace" >&2
+  exit 1
+fi
 
 if [[ -n "$move_pane" ]]; then
   if ! source_info=$(tmux display-message -p -t "$move_pane" '#{pane_id} #{window_width} #{window_height}'); then
@@ -133,31 +141,18 @@ else
 fi
 
 git worktree add "${worktree_args[@]}"
+"$workspace" register "$repository_dir" || true
 if [[ -f "$worktree_dir/.tool-versions" ]]; then
   if ! (cd "$worktree_dir" && asdf install); then
     printf 'asdf install failed. Worktree preserved at: %s\n' "$worktree_dir" >&2
     exit 1
   fi
 fi
+workspace_args=(create --path "$worktree_dir" --name "$session_name")
 if [[ -n "$move_pane" ]]; then
-  session_info=$(tmux new-session -d -P -F '#{session_id} #{pane_id}' \
-    -s "$session_name" -c "$worktree_dir" -x "$window_width" -y "$window_height" nvim)
-  read -r session_id editor_pane <<<"$session_info"
-  tmux set-option -t "$session_id" @worktree_path "$worktree_dir"
-  git_pane=$(tmux split-window -d -v -l '40%' -P -F '#{pane_id}' \
-    -t "$editor_pane" -c "$worktree_dir" lazygit)
-
-  source_info=$(tmux display-message -p -t "$move_pane" '#{session_id} #{session_windows} #{window_panes}')
-  read -r source_session source_windows source_panes <<<"$source_info"
-  if [[ "$source_windows" == 1 && "$source_panes" == 1 ]]; then
-    source_path=$(tmux display-message -p -t "$move_pane" '#{session_path}')
-    tmux new-window -d -t "$source_session:" -c "$source_path"
-  fi
-  tmux join-pane -d -h -l '60%' -s "$move_pane" -t "$git_pane"
-  tmux select-pane -t "$move_pane"
-else
-  session_id=$(tmux new-session -d -P -F '#{session_id}' -s "$session_name" -c "$worktree_dir")
+  workspace_args+=(--move-pane "$move_pane" --width "$window_width" --height "$window_height")
 fi
+session_id=$("$workspace" "${workspace_args[@]}")
 if [[ "$background" == true ]]; then
   printf 'Worktree: %s\nTmux session: %s\n' "$worktree_dir" "$session_name"
 else
