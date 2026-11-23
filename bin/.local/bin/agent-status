@@ -36,6 +36,11 @@ case "${1:-}" in
     cwd=$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null || true)
     [[ -n "$cwd" ]] || cwd="$PWD"
 
+    script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+    if [[ "$agent" == claude && -x "$script_dir/wt-workspace" ]]; then
+      printf '%s\n' "$input" | "$script_dir/wt-workspace" record-hook claude || true
+    fi
+
     tmux set-option -p -t "$pane" "@pi_status" "$status"
     tmux set-option -p -t "$pane" "@pi_name" "$agent:$(basename "$cwd")"
     tmux set-option -p -t "$pane" "@pi_cwd" "$cwd"

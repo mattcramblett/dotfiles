@@ -84,7 +84,7 @@ The `ticket-work` skill moves its coordinating pane into the first new worktree 
 
 `wt` automatically registers the repository for `wta`, even if later setup fails. Registry errors are reported without interrupting worktree creation.
 
-Run the command tests with `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests`. The layout tests use separate tmux servers and stub editor and agent processes, without touching your sessions.
+Run the command tests with `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests` and the Pi extension tests with `node --test tests/tmux_status.test.mjs` (Node.js 22.18+). The layout tests use separate tmux servers and stub editor and agent processes, without touching your sessions or contacting an agent provider.
 
 ### `wta`
 
@@ -95,6 +95,7 @@ wta                              # Open the searchable picker
 wta SERVEBX-100                   # Start with a ticket, task, branch, or repo search
 wta --path /path/to/worktree      # Attach directly, without fzf
 wta --path /path/to/worktree --agent pi
+wta --fresh                       # Recreate a workspace with a new conversation
 wta --list                       # JSON output for scripts
 ```
 
@@ -108,7 +109,11 @@ The picker shows the repository, task/branch, last-used agent, running/stopped s
 
 Selection reuses a running session at that worktree, leaving its panes and processes untouched. Otherwise, it recreates the Neovim/lazygit/agent layout described above, focused on the agent pane. It switches sessions inside tmux and attaches outside tmux. It does not create branches or worktrees, fetch, or run setup again. An unrelated session with the same name is never taken over.
 
-The managed `pi` shell wrapper remembers the last agent invoked in a worktree. An optional `claude` wrapper does the same on machines where Claude is installed; Claude is not required or installed by this repository. The agent starts normally, not with an automatic conversation-resume command. Use its own resume UI if desired. If no agent is known or its command is unavailable, the pane opens a shell. Exiting an agent also leaves a shell. `--agent` remembers an override; it never replaces a running process in an existing workspace. Agent names must be simple commands such as `pi` or `claude`, not paths or commands with arguments.
+The managed `pi` shell wrapper remembers the last agent invoked in a worktree, and Pi's tmux status extension records its exact conversation file, ID, and working directory. When recreating a workspace, `wta` resumes that conversation with `pi --session <file>`. An optional `claude` wrapper and existing `agent-status` hooks capture Claude's transcript path and conversation ID for `claude --resume <id>`; Claude is not required or installed by this repository.
+
+Use `wta --fresh` to start a new conversation instead. Missing, invalid, or deleted conversation references fall back to a normal agent launch, as does a native resume command that exits with an error. Interrupting a resume does not start another conversation. Existing running tmux workspaces are never restarted, even with `--fresh`.
+
+If no agent is known or its command is unavailable, the pane opens a shell. Exiting an agent also leaves a shell. `--agent` remembers an override; it never replaces a running process in an existing workspace. Switching to a different agent clears the old agent's conversation reference. Agent names must be simple commands such as `pi` or `claude`, not paths or commands with arguments.
 
 Other agents can use the shared registration command, including from their launch wrapper:
 
@@ -119,7 +124,11 @@ wt-workspace remember-agent some-agent --path /path/to/worktree
 
 Worktree-tagged tmux sessions take precedence over an agent's original directory, so the agent moved by `/ticket-work` is tracked correctly. Task-session renames are remembered through a tmux hook and reconciled when listing/attaching. Metadata lives under `${XDG_STATE_HOME:-$HOME/.local/state}/worktrees/`, outside this repository. Git remains authoritative for current worktrees. Missing/deleted worktrees are skipped, and registry failures do not block direct attachment.
 
-Existing sessions without metadata fall back to their session directory and a branch-derived name. Agents launched without the managed wrappers or registration command are not inferred. Conversation history and resume IDs are not recorded. This recreates a workspace after reboot, not live processes or in-flight agent work.
+Conversation references move with the pane when `/ticket-work` moves it. A reference belongs to one worktree at a time, so returning to the original checkout does not launch a duplicate of the moved conversation. The editor, lazygit, and recovery shell stay rooted in the worktree; a resumed agent uses its recorded working directory so its project lookup and internal tool paths remain consistent with the original conversation. Registry metadata contains only references, not a copy of conversation history. Recreating a workspace after reboot does not restore live processes or in-flight agent work.
+
+Existing sessions without conversation metadata start normally rather than guessing the most recent conversation. Run `/reload` once in already-open Pi sessions to load the updated extension before closing them. Pi session changes, including new, resumed, forked, and ephemeral sessions, update or clear the stored reference. Non-interactive Pi workers do not publish conversation references. Other agents still launch normally unless they have an explicit resume integration.
+
+Claude capture requires its `SessionStart` hook to invoke `agent-status set claude idle`; the same script can also capture from `UserPromptSubmit`, `Stop`, and `StopFailure` hooks. This repository does not change external Claude settings. For scripted capture, see `wt-workspace remember-conversation --help`. A plain `remember-agent` call marks a new launch and clears its previous conversation reference.
 
 Python 3 must be available through your asdf setup; it is not installed through Homebrew. Link the commands and shared library, load the wrappers in new shells, and reload the tmux hook and bindings:
 

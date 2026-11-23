@@ -161,7 +161,7 @@ class DiscoveryTests(RepositoryFixture):
         self.assertIn("--register", result.stderr)
         for args in [("--path", str(self.root)), ("--agent", "pi;bad"),
                      ("--path", ""), ("--register", ""),
-                     ("--list", "query"), ("--list", "--agent", "pi")]:
+                     ("--list", "query"), ("--list", "--agent", "pi"), ("--list", "--fresh")]:
             with self.subTest(args=args):
                 self.assertNotEqual(self.cli(*args).returncode, 0)
 
@@ -220,7 +220,7 @@ class AttachmentTests(RepositoryFixture):
         self.registry.remember(worktrees.repository(self.repo), str(self.tree), agent="pi", session_name="task-name")
         with patch.object(worktrees, "create_workspace", return_value="$5") as create:
             worktrees.attach_worktree(str(self.tree), None, self.registry, self.tmux)
-        create.assert_called_once_with(self.tmux, self.registry, str(self.tree), "task-name", layout=True, agent="pi")
+        create.assert_called_once_with(self.tmux, self.registry, str(self.tree), "task-name", layout=True, agent="pi", fresh=False)
         self.tmux.attach.assert_called_once_with("$5")
 
     def test_collision_uses_path_hash_and_never_reuses_other_worktree(self):
@@ -284,7 +284,8 @@ class AgentTrackingTests(RepositoryFixture):
         with patch.dict(os.environ, {"TMUX_PANE": "%7"}), patch.object(worktrees.os, "getcwd", return_value=str(self.repo)):
             worktrees.remember_agent(self.tmux, self.registry, "pi")
         self.assertEqual(set(self.registry.read()["worktrees"]), {str(self.tree)})
-        self.tmux.call.assert_called_once_with("set-option", "-p", "-t", "%7", "@worktree_agent", "pi")
+        self.tmux.call.assert_any_call("set-option", "-p", "-t", "%7", "@worktree_agent", "pi")
+        self.tmux.call.assert_any_call("set-option", "-p", "-u", "-t", "%7", "@worktree_conversation")
         worktrees.remember_agent(self.tmux, self.registry, "claude", path=str(self.tree))
         self.assertEqual(self.registry.read()["worktrees"][str(self.tree)]["agent"], "claude")
 

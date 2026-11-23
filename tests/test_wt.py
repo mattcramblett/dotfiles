@@ -59,6 +59,7 @@ elif command == "tmux":
             "#{@worktree_path}": paths[-1] if paths else "",
             "#{session_name}": names[-1] if names else "",
             "#{@worktree_agent}": os.environ.get("WT_TEST_AGENT", ""),
+            "#{@worktree_conversation}": os.environ.get("WT_TEST_CONVERSATION", ""),
             "#{pane_id} #{window_width} #{window_height}": "%7 160 60",
             "#{session_id} #{session_windows} #{window_panes}":
                 os.environ.get("WT_TEST_SOURCE_INFO", "$1 1 2"),
@@ -115,7 +116,7 @@ class WorktreeTests(unittest.TestCase):
 
     def calls(self, command=None):
         calls = [json.loads(line) for line in self.log.read_text().splitlines()]
-        metadata_queries = ("#{@worktree_path}", "#{session_name}", "#{@worktree_agent}")
+        metadata_queries = ("#{@worktree_path}", "#{session_name}", "#{@worktree_agent}", "#{@worktree_conversation}")
         return [call for call in calls if (command is None or call[0] == command)
                 and not (call[0] == "tmux" and call[1][0] == "display-message"
                          and call[1][-1] in metadata_queries)]

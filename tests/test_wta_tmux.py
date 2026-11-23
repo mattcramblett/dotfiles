@@ -23,6 +23,7 @@ class WorkspaceTmuxTests(RepositoryFixture):
         super().setUp()
         self.binaries = self.root / "bin"
         self.binaries.mkdir()
+        (self.binaries / "python3").symlink_to(sys.executable)
         self.socket = str(self.root / "tmux.sock")
         self.home = self.root / "home"
         self.home.mkdir()
@@ -41,7 +42,7 @@ class WorkspaceTmuxTests(RepositoryFixture):
             path = self.binaries / name
             path.write_text("#!/bin/sh\nexec /bin/sleep 600\n")
             path.chmod(0o755)
-        (self.home / ".zshenv").write_text('export PATH="$WTA_TEST_PATH"\n')
+        (self.home / ".zshenv").write_text('unsetopt GLOBAL_RCS\nexport PATH="$WTA_TEST_PATH"\nexport HISTFILE=/dev/null\n')
         (self.home / ".zshrc").write_text('pi() { wt-workspace remember-agent pi; print pi >> "$WTA_LAUNCH_LOG"; sleep 600; }\n')
         self.environment = patch.dict(os.environ, self.env, clear=True)
         self.environment.start()
@@ -67,9 +68,9 @@ class WorkspaceTmuxTests(RepositoryFixture):
                              "#{pane_id}\t#{pane_left}\t#{pane_top}\t#{pane_width}\t#{pane_height}\t#{pane_start_path}\t#{pane_active}\t#{pane_pid}")
         return [line.split("\t") for line in raw.splitlines()]
 
-    def attach(self, path=None, agent=None):
+    def attach(self, path=None, agent=None, fresh=False):
         with patch.object(worktrees.Tmux, "attach") as attach:
-            worktrees.attach_worktree(str(path or self.tree), agent, self.registry, self.tmux)
+            worktrees.attach_worktree(str(path or self.tree), agent, self.registry, self.tmux, fresh=fresh)
         return attach.call_args.args[0]
 
     def test_recreates_layout_launches_shell_function_and_reuses_session(self):
@@ -146,6 +147,109 @@ class WorkspaceTmuxTests(RepositoryFixture):
         self.assertEqual(self.tmux.value(source_pane, "#{session_id}"), session)
         self.assertEqual(self.registry.read()["worktrees"][str(self.tree)]["agent"], "claude")
         self.assertEqual(len(self.panes("=seed")), 1)
+
+    def install_logging_agent(self, name="pi", resume_exit=None):
+        binary = self.binaries / "record-agent"
+        binary.write_text(f"#!{sys.executable}\nimport json, os, sys\n"
+                          'with open(os.environ["WTA_LAUNCH_LOG"], "a") as stream:\n'
+                          '    stream.write(json.dumps({"cwd": os.getcwd(), "arguments": sys.argv[1:]}) + "\\n")\n'
+                          + (f"if sys.argv[1:]: sys.exit({resume_exit})\n" if resume_exit is not None else "")
+                          + 'os.execl("/bin/sleep", "sleep", "600")\n')
+        binary.chmod(0o755)
+        (self.home / ".zshrc").write_text(f'{name}() {{ command {shlex.quote(str(binary))} "$@"; }}\n')
+
+    def saved_conversation(self, agent="pi"):
+        session_id = "pi-session" if agent == "pi" else "c167920c-e037-43c0-b1bd-33a5eb65a287"
+        session_file = self.root / f"{session_id}.jsonl"
+        session_file.write_text(json.dumps({"type": "session", "id": session_id, "cwd": str(self.repo)}) + "\n")
+        worktrees.remember_conversation(self.tmux, self.registry, agent, str(self.repo), session_id,
+                                       str(session_file), path=str(self.tree))
+        return self.registry.read()["worktrees"][str(self.tree)]["conversation"]
+
+    def launch_records(self):
+        return [json.loads(line) for line in self.launches.read_text().splitlines()] if self.launches.exists() else []
+
+    def test_exact_pi_conversation_resumes_after_killing_the_workspace(self):
+        self.install_logging_agent()
+        conversation = self.saved_conversation()
+        session = self.attach()
+        self.wait_for(lambda: len(self.launch_records()) == 1)
+        self.assertEqual(self.launch_records()[0], {"cwd": str(self.repo), "arguments": ["--session", conversation["session_file"]]})
+        self.assertEqual({pane[5] for pane in self.panes(session)}, {str(self.tree)})
+        self.tmux.call("kill-session", "-t", session)
+        self.attach()
+        self.wait_for(lambda: len(self.launch_records()) == 2)
+        self.assertEqual(self.launch_records()[1], self.launch_records()[0])
+
+    def test_claude_resumes_by_uuid_in_its_original_directory(self):
+        self.install_logging_agent("claude")
+        conversation = self.saved_conversation("claude")
+        self.attach()
+        self.wait_for(self.launches.exists)
+        self.assertEqual(self.launch_records()[0], {"cwd": str(self.repo), "arguments": ["--resume", conversation["session_id"]]})
+
+    def test_stale_metadata_and_fresh_flag_start_normally_in_the_worktree(self):
+        self.install_logging_agent()
+        for fresh in (True, False):
+            with self.subTest(fresh=fresh):
+                conversation = self.saved_conversation()
+                if not fresh:
+                    Path(conversation["session_file"]).unlink()
+                count = len(self.launch_records())
+                session = self.attach(fresh=fresh)
+                self.wait_for(lambda: len(self.launch_records()) == count + 1)
+                self.assertEqual(self.launch_records()[-1], {"cwd": str(self.tree), "arguments": []})
+                self.tmux.call("kill-session", "-t", session)
+
+    def test_failed_native_resume_falls_back_once_without_reusing_flags(self):
+        self.install_logging_agent(resume_exit=1)
+        rc = self.home / ".zshrc"
+        rc.write_text("setopt errexit\n" + rc.read_text())
+        conversation = self.saved_conversation()
+        self.attach()
+        self.wait_for(lambda: len(self.launch_records()) == 2)
+        self.assertEqual(self.launch_records(), [
+            {"cwd": str(self.repo), "arguments": ["--session", conversation["session_file"]]},
+            {"cwd": str(self.tree), "arguments": []},
+        ])
+
+    def test_interrupted_resume_does_not_start_a_second_conversation(self):
+        self.install_logging_agent(resume_exit=130)
+        self.saved_conversation()
+        session = self.attach()
+        self.wait_for(self.launches.exists)
+        pane = next(item for item in self.panes(session) if item[6] == "1")[0]
+        marker = self.root / "shell-after-interrupt"
+        self.tmux.call("send-keys", "-t", pane, "printf ready > " + shlex.quote(str(marker)), "Enter")
+        self.wait_for(marker.exists)
+        self.assertEqual(len(self.launch_records()), 1)
+
+    def test_moving_a_pane_transfers_its_conversation_reference(self):
+        self.install_logging_agent()
+        conversation = self.saved_conversation()
+        pane = self.panes("=seed")[0][0]
+        self.tmux.call("set-option", "-p", "-t", pane, "@worktree_agent", "pi")
+        self.tmux.call("set-option", "-p", "-t", pane, "@worktree_conversation", json.dumps(conversation))
+        session = worktrees.create_workspace(self.tmux, self.registry, str(self.tree), "moved-conversation",
+                                            move_pane=pane, width=160, height=60)
+        self.assertEqual(self.registry.read()["worktrees"][str(self.tree)]["conversation"], conversation)
+        self.tmux.call("kill-session", "-t", session)
+        self.attach()
+        self.wait_for(self.launches.exists)
+        self.assertEqual(self.launch_records()[0]["arguments"], ["--session", conversation["session_file"]])
+
+    def test_claude_status_hook_captures_the_conversation_without_extra_output(self):
+        pane = self.panes("=seed")[0][0]
+        session = self.tmux.value(pane, "#{session_id}")
+        self.tmux.call("set-option", "-t", session, "@worktree_path", str(self.tree))
+        payload = {"hook_event_name": "SessionStart", "session_id": "c167920c-e037-43c0-b1bd-33a5eb65a287",
+                   "transcript_path": str(self.root / "claude.jsonl"), "cwd": str(self.repo)}
+        result = subprocess.run([str(BIN / "agent-status"), "set", "claude", "idle"],
+                                input=json.dumps(payload), capture_output=True, text=True,
+                                env={**self.env, "TMUX_PANE": pane}, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(self.registry.read()["worktrees"][str(self.tree)]["conversation"]["session_id"], payload["session_id"])
 
     def test_partial_creation_failure_is_reported_without_attaching(self):
         with patch.dict(os.environ, {"WTA_SPLIT_FAIL": "1"}), patch.object(worktrees.Tmux, "attach") as attach:

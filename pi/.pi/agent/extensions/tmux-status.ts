@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -11,6 +13,30 @@ export default function (pi: ExtensionAPI) {
   if (!pane) return;
 
   const targetPane = pane;
+  let publishedConversation: string | undefined;
+
+  async function publishConversation(ctx: ExtensionContext) {
+    if (ctx.mode !== "tui") return;
+
+    const args = [
+      "remember-conversation", "pi", "--pane", targetPane,
+      "--cwd", ctx.sessionManager.getCwd(),
+      "--session-id", ctx.sessionManager.getSessionId(),
+    ];
+    const sessionFile = ctx.sessionManager.getSessionFile();
+    if (sessionFile) args.push("--session-file", sessionFile);
+    const signature = JSON.stringify(args);
+    if (signature === publishedConversation) return;
+
+    try {
+      const result = await pi.exec(join(homedir(), ".local/bin/wt-workspace"), args, {
+        timeout: 3000,
+      });
+      if (result.code === 0) publishedConversation = signature;
+    } catch {
+      // Workspace tracking must never interrupt Pi.
+    }
+  }
 
   async function setOption(name: string, value: string) {
     await pi.exec("tmux", ["set-option", "-p", "-t", targetPane, name, value], {
@@ -27,6 +53,7 @@ export default function (pi: ExtensionAPI) {
   async function publish(status: Status, ctx: ExtensionContext) {
     try {
       await Promise.all([
+        publishConversation(ctx),
         setOption("@pi_status", status),
         setOption("@pi_cwd", ctx.cwd),
         setOption("@pi_updated_at", String(Date.now())),
