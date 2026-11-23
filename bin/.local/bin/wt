@@ -4,12 +4,14 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: wt [--background] [--move-pane <pane-id>] <branch-name>
+Usage: wt [--background] [--move-pane <pane-id>] [--no-reuse] <branch-name>
 
 Open a local branch in a sibling Git worktree. If it only exists on origin,
 create a local tracking branch. Otherwise, create it from the latest
-origin/main or origin/master. Run asdf install if the worktree contains a
-root .tool-versions file, then open it in a named tmux session.
+origin/main or origin/master. Set up runtimes and locked Ruby/Node
+dependencies with wt-setup, then open it in a named tmux session.
+
+--no-reuse disables dependency-directory seeding, not package-manager caches.
 
 --background leaves the session detached without switching your terminal.
 It also works outside tmux. Setup still runs synchronously.
@@ -24,10 +26,15 @@ EOF
 
 background=false
 move_pane=
+no_reuse=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --background)
       background=true
+      shift
+      ;;
+    --no-reuse)
+      no_reuse=true
       shift
       ;;
     --move-pane)
@@ -58,6 +65,7 @@ fi
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 workspace="$script_dir/wt-workspace"
+setup="$script_dir/wt-setup"
 
 commands=(git tmux python3)
 if [[ -n "$move_pane" ]]; then
@@ -70,10 +78,12 @@ for command in "${commands[@]}"; do
   fi
 done
 
-if [[ ! -x "$workspace" ]]; then
-  printf 'wt requires %s. Restow the bin package.\n' "$workspace" >&2
-  exit 1
-fi
+for helper in "$workspace" "$setup"; do
+  if [[ ! -x "$helper" ]]; then
+    printf 'wt requires %s. Restow the bin package.\n' "$helper" >&2
+    exit 1
+  fi
+done
 
 if [[ -n "$move_pane" ]]; then
   if ! source_info=$(tmux display-message -p -t "$move_pane" '#{pane_id} #{window_width} #{window_height}'); then
@@ -142,11 +152,14 @@ fi
 
 git worktree add "${worktree_args[@]}"
 "$workspace" register "$repository_dir" || true
-if [[ -f "$worktree_dir/.tool-versions" ]]; then
-  if ! (cd "$worktree_dir" && asdf install); then
-    printf 'asdf install failed. Worktree preserved at: %s\n' "$worktree_dir" >&2
-    exit 1
-  fi
+setup_args=(--path "$worktree_dir" --source "$repository_dir")
+if [[ "$no_reuse" == true ]]; then
+  setup_args+=(--no-reuse)
+fi
+if ! "$setup" "${setup_args[@]}"; then
+  printf 'Setup failed. Worktree preserved at: %s\n' "$worktree_dir" >&2
+  printf 'Retry with: wt-setup --path %q\n' "$worktree_dir" >&2
+  exit 1
 fi
 workspace_args=(create --path "$worktree_dir" --name "$session_name")
 if [[ -n "$move_pane" ]]; then

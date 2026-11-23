@@ -60,7 +60,52 @@ wt <worktree-name>
 
 For example, `wt feature/login` creates the branch `feature/login`, places the worktree beside the primary repository, and names the tmux session `<repository>-feature-login`. The `mattcramblett/` branch prefix is omitted from local directory and tmux session names, while the full Git branch name is preserved. Override the prefix with the `worktree.branchPrefix` Git configuration value. Dots and colons in session names become underscores.
 
-If the worktree has a root `.tool-versions` file, `wt` waits for `asdf install` to succeed before creating the session. If installation fails, it exits with an error and preserves the worktree for recovery.
+`wt` waits for `wt-setup` to finish before creating the session or moving an agent pane. Setup installs asdf runtimes and locked Ruby and Node dependencies. Failures preserve the worktree, leave the agent in its original session, and print a retry command.
+
+#### Dependency setup
+
+`wt-setup` discovers tracked dependency roots from a manifest and matching lockfile, including independent projects in subdirectories. Workspace packages without their own lockfiles are installed by their parent project, not separately. Repositories without recognized dependency roots still get runtime setup. Setup is serialized per repository to avoid competing installs from concurrent worktree creation.
+
+- **Ruby**: selects the `BUNDLED WITH` version from `Gemfile.lock`, installing that Bundler version if needed. Runs a frozen `bundle check`, then a frozen `bundle install` only when necessary. Verifies the locked bundle can activate with `bundle exec ruby -e exit` before reporting success. Existing gems are reused through Bundler's configured gem store, and automatic gem cleanup is disabled to preserve versions needed by other worktrees. Conflicting local frozen/cleanup settings stop setup without changing configuration. Checkout-local bundle paths are respected but not copied.
+- **Node**: detects Yarn, npm, or pnpm from `packageManager` and lockfiles. Uses Corepack for Yarn/pnpm when available and verifies declared package-manager versions. Runs Yarn's immutable/frozen install, `npm ci`, or `pnpm install --frozen-lockfile`. Conflicting lockfiles require an explicit `packageManager`.
+- **Runtimes**: runs `asdf install` for the root and applicable nested `.tool-versions` files. Exact `.ruby-version`, `.node-version`, and `.nvmrc` versions are supported when the tool is not declared in `.tool-versions`.
+
+For compatible Yarn 2+ `node-modules` installs on macOS, setup seeds missing root and workspace dependency directories from the primary checkout with `cp -cR -P`. APFS uses copy-on-write, so writes remain independent. Inputs and Node runtime identities must match; external dependency links prevent reuse. Internal workspace links are relocated into the new worktree. Yarn's dependency-location metadata is included, but its build-state cache is not, so install scripts are evaluated in the new checkout. Yarn always runs afterward, even when seeding succeeds. With Yarn 4+, packages containing environment or authentication files are omitted from the copy and restored normally by Yarn, so their local configuration is never copied from the source. Older Yarn versions and unsupported state formats fall back to a normal install when exclusions are needed. npm and pnpm use their native caches instead; npm's clean install would discard seeded directories.
+
+Only dependency directories are seeded, never checkout-level environment files or `.bundle/config`. No databases, migrations, service startup, or arbitrary repository bootstrap scripts run automatically. Package-manager lifecycle scripts run normally. Reuse is best effort; unavailable or incompatible source installs fall back to a normal install. On filesystems without cloning, macOS `cp` may use an independent regular copy.
+
+To disable directory seeding for a new worktree:
+
+```bash
+wt --no-reuse feature/example
+```
+
+To retry setup without recreating a worktree or touching tmux:
+
+```bash
+wt-setup --path /path/to/worktree
+wt-setup --path /path/to/worktree --no-reuse
+```
+
+Omit `--path` to use the current repository. `--source /path/to/checkout` chooses another checkout of the same repository for seeding. Existing target dependency directories are never overwritten by seeding, including on retries. Symlinked dependency directories are rejected before an installer runs, so a retry cannot modify another checkout through a shared link. `--no-reuse` disables directory seeding, not package-manager caches or Bundler's shared gem store; use it on a fresh worktree for an unseeded install. Setup does not update lockfiles or copy authentication configuration. Existing credentials must already be available to the package managers.
+
+#### Local overrides
+
+Optional configuration lives at `$(git rev-parse --path-format=absolute --git-common-dir)/worktree-setup.json`, outside tracked files and shared across the repository's worktrees. No configuration is needed for automatic detection. A `projects` array replaces discovery and runs in the listed order:
+
+```json
+{
+  "projects": [
+    {"path": ".", "type": "ruby"},
+    {"path": "client", "type": "node"},
+    {"path": "tools", "type": "command", "command": ["./bootstrap", "--local"]}
+  ]
+}
+```
+
+For Yarn 2+ monorepos, a Node project may specify `"workspaces": ["example-root", "example-app"]` to run an immutable `yarn workspaces focus` instead of installing every workspace. Include the root workspace when its tooling is needed. Workspace selection is explicit, never guessed from the current directory. Other package managers currently require a custom command for subset installs.
+
+Use `{"projects": []}` to keep runtime setup but disable automatic dependency installs. Custom commands are argument arrays, not shell strings; they are explicitly trusted local setup and do not inherit the built-in adapters' lockfile guarantees. Paths must stay inside the worktree without traversing symlinks. Keep secrets out of this file, and do not put private repository settings in these dotfiles. The `ticket-work` skill relies on the same setup and does not reinstall dependencies immediately afterward.
 
 For agents or when you want to stay in your current session:
 

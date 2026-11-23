@@ -25,6 +25,10 @@ if command == "git":
         args = args[2:]
     if args[0] == "rev-parse":
         print(directory if args[-1] == "--show-toplevel" else os.environ["WT_TEST_REPO"] + "/.git")
+    elif args[0] == "ls-files":
+        for path in sorted(Path(directory).rglob("*")):
+            if path.is_file():
+                print(str(path.relative_to(directory)) + "\0", end="")
     elif args[:2] == ["worktree", "list"]:
         repo = Path(os.environ["WT_TEST_REPO"])
         for path in [repo, *repo.parent.glob(repo.name + "-*")]:
@@ -42,6 +46,10 @@ if command == "git":
         path.mkdir()
         if os.environ.get("WT_TEST_TOOL_VERSIONS"):
             (path / ".tool-versions").touch()
+        for name, contents in json.loads(os.environ.get("WT_TEST_FILES", "{}")).items():
+            target = path / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(contents)
 elif command == "tmux":
     if args[0] == "has-session":
         sys.exit(0 if os.environ.get("WT_TEST_SESSION_EXISTS") else 1)
@@ -77,6 +85,12 @@ elif command == "tmux":
 elif command == "asdf":
     assert args == ["install"], args
     sys.exit(int(os.environ.get("WT_TEST_ASDF_EXIT", "0")))
+elif command == "npm":
+    if args == ["--version"]:
+        print("10.0.0")
+    else:
+        assert args == ["ci"], args
+        sys.exit(int(os.environ.get("WT_TEST_NPM_EXIT", "0")))
 '''
 
 
@@ -87,11 +101,12 @@ class WorktreeTests(unittest.TestCase):
         root = Path(self.temp.name).resolve()
         self.repo = root / "repo"
         self.repo.mkdir()
+        (self.repo / ".git").mkdir()
         self.worktree = root / "repo-feature-login"
         self.log = root / "calls.jsonl"
         binaries = root / "bin"
         binaries.mkdir()
-        for name in ("git", "tmux", "asdf", "nvim", "lazygit"):
+        for name in ("git", "tmux", "asdf", "nvim", "lazygit", "npm"):
             stub = binaries / name
             stub.write_text(f"#!{sys.executable}\n" + STUB)
             stub.chmod(0o755)
@@ -100,6 +115,7 @@ class WorktreeTests(unittest.TestCase):
             "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
             "TMUX": "test-session",
             "XDG_STATE_HOME": str(root / "state"),
+            "XDG_CACHE_HOME": str(root / "cache"),
             "WT_TEST_LOG": str(self.log),
             "WT_TEST_REPO": str(self.repo),
             "WT_TEST_REFS": json.dumps(["refs/remotes/origin/main"]),
@@ -137,6 +153,30 @@ class WorktreeTests(unittest.TestCase):
         )
         commands = [call[0] for call in self.calls()]
         self.assertLess(commands.index("asdf"), len(commands) - 2)
+
+    def test_dependency_install_finishes_before_pane_move(self):
+        result = self.run_wt(
+            "--background", "--no-reuse", "--move-pane", "%7", "feature/login",
+            WT_TEST_FILES=json.dumps({"package.json": "{}", "package-lock.json": "{}"}),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        install = next(i for i, call in enumerate(calls) if call[:2] == ["npm", ["ci"]])
+        session = next(i for i, call in enumerate(calls) if call[0] == "tmux" and call[1][0] == "new-session")
+        self.assertLess(install, session)
+        self.assertEqual(calls[install][2], str(self.worktree))
+
+    def test_dependency_failure_preserves_worktree_and_agent(self):
+        result = self.run_wt(
+            "--background", "--move-pane", "%7", "feature/login",
+            WT_TEST_FILES=json.dumps({"package.json": "{}", "package-lock.json": "{}"}),
+            WT_TEST_NPM_EXIT="9",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.worktree / "package.json").is_file())
+        self.assertIn("Retry with: wt-setup --path", result.stderr)
+        self.assertFalse(any(call[1][0] in ("new-session", "join-pane") for call in self.calls("tmux")))
+        self.assertNotIn("Tmux session:", result.stdout)
 
     def test_skips_asdf_without_tool_versions(self):
         result = self.run_wt()
@@ -245,7 +285,7 @@ class WorktreeTests(unittest.TestCase):
             with self.subTest(args=args):
                 result = self.run_wt(*args, TMUX="")
                 self.assertEqual(result.returncode, 2)
-                self.assertIn("Usage: wt [--background] [--move-pane <pane-id>] <branch-name>", result.stderr)
+                self.assertIn("Usage: wt [--background] [--move-pane <pane-id>] [--no-reuse] <branch-name>", result.stderr)
                 self.assertFalse(self.log.exists())
 
     def test_background_help_does_not_require_tmux(self):

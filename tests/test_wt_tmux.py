@@ -23,6 +23,7 @@ class WorktreeLayoutTests(unittest.TestCase):
         self.root = Path(self.temp.name).resolve()
         self.repo = self.root / "repo"
         self.repo.mkdir()
+        (self.repo / ".git").mkdir()
         self.worktree = self.root / "repo-feature-login"
         binaries = self.root / "bin"
         binaries.mkdir()
