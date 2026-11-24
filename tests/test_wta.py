@@ -302,9 +302,9 @@ class PickerTests(unittest.TestCase):
     def test_query_safe_preview_and_selection(self):
         rows = [{"path": "/repo/'; touch nope", "repo": "repo", "branch": "branch", "agent": "pi",
                  "session_name": "task", "running": False}]
-        result = subprocess.CompletedProcess([], 0, "0\trepo\n", "")
+        result = subprocess.CompletedProcess([], 0, "kept query\n\n0\trepo\n", "")
         with patch.object(worktrees, "require"), patch.object(worktrees.subprocess, "run", return_value=result) as execute:
-            self.assertEqual(worktrees.pick(rows, "SERVEBX-100"), rows[0]["path"])
+            self.assertEqual(worktrees.pick(rows, "SERVEBX-100"), (rows[0]["path"], False, "kept query"))
         args = execute.call_args.args[0]
         self.assertEqual(args[args.index("--query") + 1], "SERVEBX-100")
         preview = args[args.index("--preview") + 1]

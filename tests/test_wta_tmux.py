@@ -251,6 +251,85 @@ class WorkspaceTmuxTests(RepositoryFixture):
         self.assertEqual(result.stdout, "")
         self.assertEqual(self.registry.read()["worktrees"][str(self.tree)]["conversation"]["session_id"], payload["session_id"])
 
+    def test_removal_closes_renamed_workspace_with_moved_agent_and_nested_window(self):
+        source_pane = self.panes("=seed")[0][0]
+        source_pid = int(self.tmux.value(source_pane, "#{pane_pid}"))
+        session = worktrees.create_workspace(self.tmux, self.registry, str(self.tree), "removal-task",
+                                            move_pane=source_pane, width=160, height=60)
+        self.tmux.call("rename-session", "-t", session, "renamed-removal-task")
+        nested = self.tree / "nested"
+        nested.mkdir()
+        self.tmux.call("new-window", "-d", "-t", session + ":", "-c", str(nested), "sleep 600")
+        self.assertEqual(self.tmux.value(source_pane, "#{pane_current_path}"), str(self.repo))
+        with patch.object(worktrees, "confirm_removal", return_value=True):
+            worktrees.remove_worktree(str(self.tree), self.registry, self.tmux)
+        self.assertFalse(self.tree.exists())
+        self.assertEqual([item["name"] for item in self.tmux.sessions()], ["seed"])
+        self.assertNotIn(str(self.tree), self.registry.read()["worktrees"])
+
+        def stopped():
+            try:
+                os.kill(source_pid, 0)
+                return False
+            except ProcessLookupError:
+                return True
+
+        self.wait_for(stopped)
+
+    def test_removal_of_last_attached_session_switches_client_to_home_fallback(self):
+        session = self.attach()
+        self.tmux.call("kill-session", "-t", "=seed")
+        client = subprocess.Popen([TMUX, "-S", self.socket, "-f", "/dev/null", "-C", "attach-session", "-t", session],
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env)
+
+        def stop_client():
+            if client.poll() is None:
+                client.terminate()
+            try:
+                client.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                client.kill()
+                client.communicate(timeout=5)
+
+        self.addCleanup(stop_client)
+        self.wait_for(lambda: bool(self.tmux.clients()))
+        with patch.object(worktrees, "confirm_removal", return_value=True):
+            worktrees.remove_worktree(str(self.tree), self.registry, self.tmux)
+        sessions = self.tmux.sessions()
+        self.assertEqual(len(sessions), 1)
+        self.assertEqual(sessions[0]["path"], str(self.home))
+        self.assertFalse(sessions[0]["tagged"])
+        self.assertEqual(self.tmux.clients()[0]["session"], sessions[0]["id"])
+        self.assertIsNone(client.poll(), "The attached client was disconnected")
+
+    def test_removal_from_inside_a_tagged_session_finishes_all_session_cleanup(self):
+        session = self.attach()
+        pane = next(item for item in self.panes(session) if item[6] == "1")[0]
+        duplicate = self.tmux.call("new-session", "-d", "-P", "-F", "#{session_id}",
+                                   "-s", "zz-duplicate-task", "-c", str(self.tree), "sleep 600")
+        self.tmux.call("set-option", "-t", duplicate, "@worktree_path", str(self.tree))
+        command = shlex.join([str(BIN / "wtrm"), "--path", str(self.tree)])
+        self.tmux.call("send-keys", "-t", pane, command, "Enter")
+        self.wait_for(lambda: "[y/N]" in self.tmux.call("capture-pane", "-p", "-t", pane))
+        self.tmux.call("send-keys", "-t", pane, "y", "Enter")
+        self.wait_for(lambda: len(self.tmux.sessions()) == 1)
+        self.assertEqual(self.tmux.sessions()[0]["name"], "seed")
+        self.assertFalse(self.tree.exists())
+        self.assertNotIn(str(self.tree), self.registry.read()["worktrees"])
+
+    def test_worktree_popup_binding_uses_the_global_registered_picker(self):
+        text = (ROOT / "tmux/.config/tmux/tmux.conf").read_text()
+        binding = "bind-key t display-popup" + text.split("bind-key t display-popup", 1)[1].split("\n\n", 1)[0]
+        config = self.root / "worktree-binding.conf"
+        config.write_text(binding + "\n")
+        self.tmux.call("source-file", str(config))
+        bindings = self.tmux.call("list-keys", "-T", "prefix").splitlines()
+        loaded = next(line for line in bindings if shlex.split(line)[shlex.split(line).index("prefix") + 1] == "t")
+        self.assertIn("/.local/bin/wta", loaded)
+        self.assertNotIn("wtlist", loaded)
+        self.assertNotIn("pane_current_path", loaded)
+        self.assertIn(str(self.home), loaded)
+
     def test_partial_creation_failure_is_reported_without_attaching(self):
         with patch.dict(os.environ, {"WTA_SPLIT_FAIL": "1"}), patch.object(worktrees.Tmux, "attach") as attach:
             with self.assertRaisesRegex(worktrees.WorkspaceError, "Workspace preserved"):

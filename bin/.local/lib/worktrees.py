@@ -170,6 +170,11 @@ class Registry:
                     **previous, "repository": common, **preferences, "updated_at": time.time(),
                 }
 
+    def forget(self, path):
+        if self.path.exists():
+            with self.transaction() as data:
+                data["worktrees"].pop(path, None)
+
 
 def best_effort(action, *args, **kwargs):
     try:
@@ -201,32 +206,58 @@ class Tmux:
     def value(self, target, expression):
         return self.call("display-message", "-p", "-t", target, expression)
 
-    def sessions(self):
+    def sessions(self, strict=False):
         if not shutil.which("tmux"):
+            if strict:
+                raise WorkspaceError("Requires tmux to inspect sessions before removal")
             return []
         separator = "\x1f"
         result = run(["tmux", "list-sessions", "-F", separator.join([
             "#{session_id}", "#{session_name}", "#{@worktree_path}", "#{session_path}", "#{session_activity}",
         ])], check=False)
         if result.returncode:
-            if not any(message in result.stderr.lower() for message in ("no server", "no such file", "error connecting")):
+            absent = any(message in result.stderr.lower() for message in ("no server", "no such file", "no sessions"))
+            if strict and not absent:
+                raise WorkspaceError(result.stderr.strip() or "Cannot inspect tmux sessions")
+            if not absent:
                 warn(result.stderr.strip())
             return []
         sessions = []
         for line in result.stdout.splitlines():
             parts = line.split(separator)
             if len(parts) != 5:
+                if strict:
+                    raise WorkspaceError("Cannot safely read a tmux session record")
                 warn("Ignoring an unreadable tmux session record")
                 continue
             session_id, name, tagged, path, activity = parts
+            if strict and (not re.fullmatch(r"\$[0-9]+", session_id) or (tagged and not Path(tagged).is_absolute())):
+                raise WorkspaceError("Cannot safely identify a tmux worktree session")
             if tagged or path:
+                try:
+                    timestamp = int(activity or 0)
+                except ValueError as error:
+                    if strict:
+                        raise WorkspaceError("Cannot safely read tmux session activity") from error
+                    warn("Ignoring an unreadable tmux session record")
+                    continue
                 sessions.append({"id": session_id, "name": name, "path": canonical(tagged or path),
-                                 "tagged": bool(tagged), "activity": int(activity or 0)})
+                                 "tagged": bool(tagged), "activity": timestamp})
         return sessions
 
     def matching(self, path, sessions=None):
         matches = [item for item in (sessions if sessions is not None else self.sessions()) if item["path"] == path]
         return max(matches, key=lambda item: item["activity"], default=None)
+
+    def clients(self):
+        raw = self.call("list-clients", "-F", "#{client_name}\x1f#{session_id}")
+        clients = []
+        for line in raw.splitlines():
+            parts = line.split("\x1f")
+            if len(parts) != 2 or not parts[0] or not re.fullmatch(r"\$[0-9]+", parts[1]):
+                raise WorkspaceError("Cannot safely identify attached tmux clients")
+            clients.append({"name": parts[0], "session": parts[1]})
+        return clients
 
     def attach(self, session_id):
         action = "switch-client" if os.environ.get("TMUX") else "attach-session"
@@ -495,11 +526,119 @@ def attach_worktree(path, agent, registry, tmux, fresh=False):
     tmux.attach(session_id)
 
 
+def removal_target(requested):
+    path, common = identify(requested)
+    if canonical(requested) != path:
+        raise WorkspaceError("Select the worktree root, not a subdirectory")
+    trees = git_worktrees(common)
+    if not trees or canonical(trees[0].get("worktree", common)) == path:
+        raise WorkspaceError("The primary worktree cannot be removed")
+    tree = next((item for item in trees if canonical(item.get("worktree", common)) == path), None)
+    if tree is None:
+        raise WorkspaceError("The worktree is no longer registered with Git")
+    if "locked" in tree:
+        raise WorkspaceError("The worktree is locked; removal refused")
+    status = output(["git", "-C", path, "status", "--porcelain", "-z", "--untracked-files=all"])
+    if status:
+        raise WorkspaceError("The worktree has uncommitted or untracked changes; removal refused")
+    return path, common, tree.get("branch", "").removeprefix("refs/heads/") or "(detached)"
+
+
+def tagged_sessions(path, sessions):
+    return [session for session in sessions if session.get("tagged") and session["path"] == path]
+
+
+def session_identities(sessions):
+    return {(session["id"], session["name"]) for session in sessions}
+
+
+def confirm_removal(path, branch, sessions):
+    try:
+        with open("/dev/tty", "r", encoding="utf-8") as response, open("/dev/tty", "w", encoding="utf-8") as terminal:
+            terminal.write(f"Remove worktree?\n  Branch: {display(branch)}\n  Path:   {display(path)}\n")
+            if sessions:
+                terminal.write("Also close these tmux sessions and their panes, including running agents/commands:\n")
+                terminal.write("".join(f"  {session['id']}  {display(session['name'])}\n" for session in sessions))
+            else:
+                terminal.write("No explicitly tagged tmux sessions are associated with this worktree.\n")
+            terminal.write("The Git branch is preserved. All files inside the worktree, including ignored files, will be removed.\n")
+            terminal.write("Saved conversation files outside the worktree are not deleted.\n[y/N] ")
+            terminal.flush()
+            return response.readline().strip().lower() == "y"
+    except OSError as error:
+        raise WorkspaceError("Removal requires confirmation on a controlling terminal; nothing was removed") from error
+
+
+def close_removed_sessions(path, approved, tmux):
+    sessions = tmux.sessions(strict=True)
+    current = tagged_sessions(path, sessions)
+    identities = session_identities(approved)
+    if session_identities(current) - identities:
+        raise WorkspaceError("Unconfirmed tmux sessions now reference this worktree; sessions were left running")
+    approved_ids = {session["id"] for session in approved}
+    if any(session["id"] in approved_ids and (session["id"], session["name"]) not in session_identities(current)
+           for session in sessions):
+        raise WorkspaceError("A confirmed tmux session changed identity; sessions were left running")
+    if not current:
+        return
+    doomed = {session["id"] for session in current}
+    clients = [client for client in tmux.clients() if client["session"] in doomed]
+    safe = next((session["id"] for session in sessions
+                 if session["id"] not in doomed and not Path(session["path"]).is_relative_to(path)), None)
+    if clients and safe is None:
+        safe = tmux.call("new-session", "-d", "-P", "-F", "#{session_id}", "-c", str(Path.home())).strip()
+        if not re.fullmatch(r"\$[0-9]+", safe) or safe in doomed:
+            raise WorkspaceError("Cannot create a safe tmux session for attached clients")
+    pane = os.environ.get("TMUX_PANE")
+    origin = best_effort(tmux.value, pane, "#{session_id}") if pane else None
+    commands = []
+    for client in clients:
+        commands.extend(["switch-client", "-c", client["name"], "-t", safe, ";"])
+    for session in sorted(current, key=lambda item: item["id"] == origin):
+        commands.extend(["kill-session", "-t", session["id"], ";"])
+    tmux.call(*commands[:-1])
+
+
+def remove_worktree(requested, registry, tmux):
+    require("git", "tmux")
+    target = removal_target(requested)
+    path, common, branch = target
+    sessions = tagged_sessions(path, tmux.sessions(strict=True))
+    if not confirm_removal(path, branch, sessions):
+        return "Removal cancelled."
+    if removal_target(path) != target:
+        raise WorkspaceError("Worktree identity changed during confirmation; nothing was removed")
+    if session_identities(tagged_sessions(path, tmux.sessions(strict=True))) != session_identities(sessions):
+        raise WorkspaceError("Associated sessions changed during confirmation; nothing was removed")
+    if Path.cwd().is_relative_to(path):
+        os.chdir(Path.home())
+    run(["git", "-C", common, "worktree", "remove", "--", path])
+    best_effort(registry.forget, path)
+    message = f"Removed worktree. Branch preserved: {display(branch)}"
+    try:
+        close_removed_sessions(path, sessions, tmux)
+    except WorkspaceError as error:
+        raise WorkspaceError(f"{message}. Tmux cleanup failed: {error}") from error
+    return message
+
+
+def removal_main(argv=None):
+    parser = argparse.ArgumentParser(description="Remove a linked worktree and its explicitly tagged tmux sessions.")
+    parser.add_argument("--path", required=True)
+    args = parser.parse_args(argv)
+    if not args.path:
+        parser.error("--path requires a nonempty worktree path")
+    try:
+        print(remove_worktree(args.path, Registry(), Tmux()))
+    except WorkspaceError as error:
+        parser.exit(1, f"wtrm: {error}\n")
+
+
 def display(value):
     return str(value).encode("unicode_escape").decode("ascii")
 
 
-def pick(rows, query):
+def pick(rows, query, notice=""):
     require("fzf")
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as snapshot:
         json.dump(rows, snapshot)
@@ -509,19 +648,23 @@ def pick(rows, query):
                  f"{display(row['branch'])}\t{display(row['agent'] or '(unknown)')}\t"
                  f"{'running' if row['running'] else 'stopped'}\t{display(row['path'])}"
                  for index, row in enumerate(rows)]
-        result = subprocess.run(["fzf", "--delimiter=\t", "--with-nth=2..", "--prompt=worktree> ",
-                                 "--header=REPO / TASK / BRANCH / AGENT / SESSION / PATH", "--query", query or "",
+        header = "REPO / TASK / BRANCH / AGENT / SESSION / PATH\nCtrl-X removes the worktree and tagged sessions"
+        if notice:
+            header += "\n" + display(notice)
+        result = subprocess.run(["fzf", "--no-multi", "--delimiter=\t", "--with-nth=2..", "--prompt=worktree> ",
+                                 "--header", header, "--query", query or "", "--expect=ctrl-x", "--print-query",
                                  "--preview", preview, "--preview-window=right,55%,wrap"],
-                                input="\n".join(lines) + "\n", capture_output=True, text=True)
+                                input="\n".join(lines) + "\n", capture_output=True, text=True, check=False)
         if result.returncode in (1, 130):
             return None
         if result.returncode:
             raise WorkspaceError(result.stderr.strip() or "fzf failed")
         try:
-            index = int(result.stdout.split("\t", 1)[0])
-            if index < 0:
+            query, key, selected = result.stdout.split("\n", 2)
+            index = int(selected.split("\t", 1)[0])
+            if index < 0 or key not in ("", "ctrl-x"):
                 raise ValueError
-            return rows[index]["path"]
+            return rows[index]["path"], key == "ctrl-x", query
         except (IndexError, ValueError) as error:
             raise WorkspaceError("Invalid worktree picker selection") from error
 
@@ -556,16 +699,30 @@ def wta_main(argv=None):
             require("tmux")
             attach_worktree(args.path, args.agent, registry, tmux, fresh=args.fresh)
         else:
-            rows = candidates(registry, tmux)
-            if args.list:
-                print(json.dumps(rows, indent=2))
-            elif not rows:
-                print("No worktrees registered. Use wta --register /path/to/repo.", file=sys.stderr)
-            else:
-                path = pick(rows, args.query)
-                if path:
-                    require("tmux")
-                    attach_worktree(path, args.agent, registry, tmux, fresh=args.fresh)
+            query, notice = args.query, ""
+            while True:
+                rows = candidates(registry, tmux)
+                if args.list:
+                    print(json.dumps(rows, indent=2))
+                    break
+                if not rows:
+                    if notice:
+                        print(notice, file=sys.stderr)
+                    print("No worktrees registered. Use wta --register /path/to/repo.", file=sys.stderr)
+                    break
+                selection = pick(rows, query, notice)
+                if selection is None:
+                    break
+                path, removing, query = selection
+                if removing:
+                    try:
+                        notice = remove_worktree(path, registry, tmux)
+                    except WorkspaceError as error:
+                        notice = f"Removal failed: {error}"
+                    continue
+                require("tmux")
+                attach_worktree(path, args.agent, registry, tmux, fresh=args.fresh)
+                break
     except WorkspaceError as error:
         parser.exit(1, f"wta: {error}\n")
 

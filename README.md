@@ -150,7 +150,11 @@ Register each existing repository once, from any directory. All its current work
 wta --register /path/to/repository
 ```
 
-The picker shows the repository, task/branch, last-used agent, running/stopped state, and path, with a Git status preview. Running workspaces appear first, then recently used worktrees. Cancel without changing anything.
+The picker shows the repository, task/branch, last-used agent, running/stopped state, and path, with a Git status preview. Running workspaces appear first, then recently used worktrees. `prefix+t` opens this same picker from any directory, not just a Git checkout. Press Enter to attach or Esc to cancel selection.
+
+Press `Ctrl-X` to remove the selected linked worktree. Confirmation lists its branch, path, and every tmux session explicitly tagged with that exact worktree path, including renamed sessions and sessions containing agents whose working directory stayed elsewhere. Closing a session closes all of its panes and their attached commands. Removal never uses force: the primary worktree and worktrees with uncommitted changes, untracked files, or a lock are protected. All files inside the worktree, including ignored files, are deleted. The Git branch and conversation files stored outside that worktree are preserved.
+
+Only after Git successfully removes the worktree are the confirmed tagged sessions closed and its workspace metadata discarded. Unrelated and untagged sessions are left alone, even if their names or pane directories look similar. Attached clients switch to another session outside the deleted tree first, or a new home-directory shell session if none exists. The picker refreshes with the current query and displays the removal status without invoking agent resumption. Deleting the session that launched the picker may close it too; `prefix+t` can reopen it from the remaining session. If session identity changes during confirmation, removal is refused; if tmux cleanup fails after Git removal, the error explicitly reports that the worktree is already gone.
 
 Selection reuses a running session at that worktree, leaving its panes and processes untouched. Otherwise, it recreates the Neovim/lazygit/agent layout described above, focused on the agent pane. It switches sessions inside tmux and attaches outside tmux. It does not create branches or worktrees, fetch, or run setup again. An unrelated session with the same name is never taken over.
 
@@ -184,7 +188,7 @@ exec zsh
 tmux source-file ~/.config/tmux/tmux.conf
 ```
 
-The commands require Python 3 and Git. Attachment requires tmux; creating the layout also requires Neovim, lazygit, and Zsh. Only the interactive picker requires fzf. Shell startup customizations should preserve the managed wrappers if automatic tracking is desired.
+The commands require Python 3 and Git. Attachment and removal require tmux; creating the layout also requires Neovim, lazygit, and Zsh. Only the interactive picker requires fzf. Shell startup customizations should preserve the managed wrappers if automatic tracking is desired.
 
 ### `wtlist`
 
@@ -194,7 +198,7 @@ Browse the current repository's worktrees and open the selected worktree in tmux
 wtlist
 ```
 
-When run outside tmux, the selected worktree path is printed to standard output. Press `Ctrl-X` in the picker to confirm and remove a linked worktree. The primary worktree cannot be removed, dirty worktrees are rejected by Git, and the branch is preserved.
+When run outside tmux, the selected worktree path is printed to standard output. This remains a current-repository picker; `prefix+t` and `wta` browse all registered repositories. `Ctrl-X` uses the shared `wtrm --path <worktree-path>` removal flow described above, including confirmation and cleanup of explicitly tagged tmux sessions. Direct removal requires a controlling terminal for confirmation.
 
 ## Features
 
@@ -208,4 +212,4 @@ The `pi` shell wrapper runs Pi with the Node.js version from `~/.tool-versions` 
 
 Inside tmux, press `Ctrl-Space`, then `a`, to view running Pi agents, inspect their pane output, and jump to a selected agent. Press `Ctrl-R` in the picker to refresh the agent list and preview.
 
-Press `Ctrl-Space`, then `t`, to browse worktrees for the repository in the current pane. Selecting a worktree focuses an existing pane at that path or opens it in a new tmux window.
+Press `Ctrl-Space`, then `t`, to browse worktrees across all registered repositories. Enter reuses or recreates the selected worktree's workspace; `Ctrl-X` confirms removal of the worktree and its explicitly tagged tmux sessions.
