@@ -13,6 +13,8 @@ brew "fd"
 brew "fzf"
 # Distributed revision control system
 brew "git"
+# Detect secrets in files and Git history
+brew "gitleaks"
 # Syntax-highlighting pager for git and diff output
 brew "git-delta"
 # Simple terminal UI for git commands

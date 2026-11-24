@@ -24,10 +24,16 @@ completion, and before any explicitly authorized commit or push:
    secrets, sensitive values, and workplace-specific details.
 2. Scan all tracked files and new files intended for inclusion, including hidden
    configuration, for credential patterns and workplace-specific references.
-   Use an available secret scanner such as Gitleaks, plus targeted searches and
-   manual review for workplace details that secret scanners do not detect. If no
-   scanner is available, use pattern searches and manual review, and disclose
-   that limitation. Do not treat a clean automated scan as proof of safety.
+   Use Gitleaks (`brew "gitleaks"` in `Brewfile`) for secret scanning. Copy the
+   current contents of those files into a temporary directory, preserving
+   repository-relative paths, then run:
+   `gitleaks dir --redact --no-banner <scan-directory>`
+   Exclude ignored local files and do not follow symlinks outside the repository.
+   Remove the temporary directory afterward. A history-only scan is not enough.
+   Also use targeted searches and manual review for workplace details that
+   Gitleaks does not detect. If Gitleaks is unavailable, use pattern searches
+   and manual review, and disclose that the Gitleaks scan was not run. Do not
+   treat a clean automated scan as proof of safety.
 3. Remove or replace findings introduced by the task and repeat the check. Report
    pre-existing findings without altering unrelated files. If a real credential
    may already have been committed, flag the need for revocation or rotation;
