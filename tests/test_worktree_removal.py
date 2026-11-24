@@ -432,8 +432,10 @@ class TerminalRemovalTests(RepositoryFixture):
         for key, deleting in [(b"\r", False), (b"\x18", True)]:
             with self.subTest(key=key):
                 code, output = terminal_command([sys.executable, "-c", script], self.root,
-                                                env, b"Ctrl-X removes", key)
+                                                env, b"Git status:", key)
                 self.assertEqual(code, 0, output)
+                self.assertIn("Agent:", output)
+                self.assertIn("Path:", output)
                 result = json.loads(output.split("RESULT:", 1)[1].strip())
                 self.assertEqual(result, [str(self.tree), deleting, "topic"])
 

@@ -638,6 +638,13 @@ def display(value):
     return str(value).encode("unicode_escape").decode("ascii")
 
 
+def preview_worktree(row):
+    print(f"Branch: {display(row['branch'])}\n"
+          f"Agent: {display(row['agent'] or '(unknown)')}\n"
+          f"Path: {display(row['path'])}\n\nGit status:", flush=True)
+    subprocess.run(["git", "-C", row["path"], "status", "--short", "--branch"], check=False)
+
+
 def pick(rows, query, notice=""):
     require("fzf")
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as snapshot:
@@ -645,10 +652,8 @@ def pick(rows, query, notice=""):
         snapshot.flush()
         preview = shlex.join([sys.executable, str(helper_path()), "preview", snapshot.name]) + " {1}"
         lines = [f"{index}\t{display(row['repo'])}\t{display(row['session_name'] or row['branch'])}\t"
-                 f"{display(row['branch'])}\t{display(row['agent'] or '(unknown)')}\t"
-                 f"{'running' if row['running'] else 'stopped'}\t{display(row['path'])}"
-                 for index, row in enumerate(rows)]
-        header = "REPO / TASK / BRANCH / AGENT / SESSION / PATH\nCtrl-X removes the worktree and tagged sessions"
+                 f"{'running' if row['running'] else 'stopped'}" for index, row in enumerate(rows)]
+        header = "REPO | TASK / BRANCH | STATUS\nCtrl-X removes the worktree and tagged sessions"
         if notice:
             header += "\n" + display(notice)
         result = subprocess.run(["fzf", "--no-multi", "--delimiter=\t", "--with-nth=2..", "--prompt=worktree> ",
@@ -781,6 +786,6 @@ def workspace_main(argv=None):
         elif args.command == "preview":
             with open(args.snapshot) as stream:
                 row = json.load(stream)[args.index]
-            subprocess.run(["git", "-C", row["path"], "status", "--short", "--branch"])
+            preview_worktree(row)
     except (WorkspaceError, OSError, ValueError, IndexError) as error:
         parser.exit(1, f"wt-workspace: {error}\n")

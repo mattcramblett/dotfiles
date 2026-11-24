@@ -3,6 +3,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -311,6 +312,42 @@ class PickerTests(unittest.TestCase):
         self.assertNotIn(rows[0]["path"], preview)
         self.assertTrue(preview.endswith(" {1}"))
 
+    def test_compact_rows_keep_three_visible_columns_and_full_preview_metadata(self):
+        rows = [{"path": "/example/first", "repo": "repo-one", "branch": "feature/full-branch", "agent": "example-agent",
+                 "session_name": "named-task", "running": True},
+                {"path": "/example/second", "repo": "repo-two", "branch": "topic", "agent": None,
+                 "session_name": "", "running": False}]
+
+        def select(argv, **kwargs):
+            fields = [line.split("\t") for line in kwargs["input"].splitlines()]
+            self.assertEqual(fields, [["0", "repo-one", "named-task", "running"],
+                                      ["1", "repo-two", "topic", "stopped"]])
+            self.assertIn("--with-nth=2..", argv)
+            self.assertEqual(argv[argv.index("--header") + 1].splitlines()[0], "REPO | TASK / BRANCH | STATUS")
+            preview = shlex.split(argv[argv.index("--preview") + 1])
+            with open(preview[-2]) as stream:
+                self.assertEqual(json.load(stream), rows)
+            return subprocess.CompletedProcess(argv, 0, "query\nctrl-x\n1\trepo-two\ttopic\tstopped\n", "")
+
+        with patch.object(worktrees, "require"), patch.object(worktrees.subprocess, "run", side_effect=select):
+            self.assertEqual(worktrees.pick(rows, "query"), (rows[1]["path"], True, "query"))
+
+    def test_preview_shows_full_details_without_interpreting_terminal_controls(self):
+        row = {"branch": "feature/full-branch", "agent": "example-agent", "path": "/repo/quote'; $(nope)\nline"}
+        with patch("sys.stdout", new_callable=io.StringIO) as stdout, patch.object(worktrees.subprocess, "run") as execute:
+            worktrees.preview_worktree(row)
+        self.assertIn("Branch: feature/full-branch", stdout.getvalue())
+        self.assertIn("Agent: example-agent", stdout.getvalue())
+        self.assertIn("Path: /repo/quote'; $(nope)\\nline", stdout.getvalue())
+        self.assertNotIn(row["path"], stdout.getvalue())
+        self.assertIn("Git status:", stdout.getvalue())
+        execute.assert_called_once_with(["git", "-C", row["path"], "status", "--short", "--branch"], check=False)
+
+    def test_preview_handles_an_unknown_agent(self):
+        with patch("sys.stdout", new_callable=io.StringIO) as stdout, patch.object(worktrees.subprocess, "run"):
+            worktrees.preview_worktree({"branch": "topic", "agent": None, "path": "/repo"})
+        self.assertIn("Agent: (unknown)", stdout.getvalue())
+
     def test_cancel_and_bad_selection(self):
         with patch.object(worktrees, "require"), patch.object(worktrees.subprocess, "run") as execute:
             for code in (1, 130):
@@ -320,6 +357,20 @@ class PickerTests(unittest.TestCase):
                 execute.return_value = subprocess.CompletedProcess([], 0, value, "")
                 with self.assertRaises(worktrees.WorkspaceError):
                     worktrees.pick([], "")
+
+
+class PreviewTests(RepositoryFixture):
+    def test_preview_command_prints_metadata_then_real_git_status(self):
+        snapshot = self.root / "picker-snapshot.json"
+        row = {"branch": "feature/preview-case", "agent": "example-agent", "path": str(self.tree)}
+        snapshot.write_text(json.dumps([row]))
+        result = subprocess.run([str(BIN / "wt-workspace"), "preview", str(snapshot), "0"],
+                                cwd=self.root, env=self.env, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Branch: feature/preview-case", result.stdout)
+        self.assertIn("Agent: example-agent", result.stdout)
+        self.assertIn("Path: " + str(self.tree), result.stdout)
+        self.assertLess(result.stdout.index("Git status:"), result.stdout.index("## "))
 
 
 if __name__ == "__main__":
