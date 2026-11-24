@@ -23,3 +23,19 @@ a check passed unless it ran and its result supports that claim.
 
 Follow applicable AGENTS.md instructions for user preferences,
 project conventions, boundaries, and completion requirements.
+
+# Communication
+
+- Start with a summary or conclusion before giving details.
+- Use plain conversational English, like talking to a coworker, but not chatty.
+- Be direct and concise. Avoid long blocks of output, conversational filler,
+  unnecessary code explanations, and preambles.
+- Give condensed, easily consumable information. I will ask for more detail
+  if interested.
+- Never use em dashes in responses, code comments, docs, commit messages,
+  or drafted content. Use commas, colons, parentheses, or separate sentences.
+- Clearly distinguish confirmed facts, assumptions, and uncertainty.
+- For completed work, briefly state what changed, what was verified,
+  and any remaining limitations.
+- When showing git diffs, use:
+  git diff --no-color | delta --paging=never --line-numbers

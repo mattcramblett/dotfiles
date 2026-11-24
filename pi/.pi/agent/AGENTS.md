@@ -47,19 +47,3 @@ For implementation tasks:
 
 Do not stop at a plausible implementation when verification is available.
 Do not expand into unrelated cleanup.
-
-# Communication
-
-- Start with a summary or conclusion before giving details.
-- Use plain conversational English, like talking to a coworker, but not chatty.
-- Be direct and concise. Avoid long blocks of output, conversational filler,
-  unnecessary code explanations, and preambles.
-- Give condensed, easily consumable information. I will ask for more detail
-  if interested.
-- Never use em dashes in responses, code comments, docs, commit messages,
-  or drafted content. Use commas, colons, parentheses, or separate sentences.
-- Clearly distinguish confirmed facts, assumptions, and uncertainty.
-- For completed work, briefly state what changed, what was verified,
-  and any remaining limitations.
-- When showing git diffs, use:
-  git diff --no-color | delta --paging=never --line-numbers
