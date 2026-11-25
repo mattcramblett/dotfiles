@@ -104,6 +104,26 @@ class DiscoveryTests(RepositoryFixture):
         self.assertIn("Skipping", errors.getvalue())
         self.assertTrue((self.repo / ".git/worktrees/repo-feature").exists())
 
+    def test_repositories_sort_reverse_alphabetically_before_running_status_and_recency(self):
+        api = self.make_repo(self.root / "api")
+        zebra = self.make_repo(self.root / "Zebra")
+        recent = self.add_tree(self.repo, self.root / "repo-recent", "recent")
+        self.register()
+        self.register(zebra)
+        self.register(api)
+        common = worktrees.repository(self.repo)
+        with patch.object(worktrees.time, "time", return_value=100):
+            self.registry.remember(common, str(recent))
+        with patch.object(worktrees.time, "time", return_value=200):
+            self.registry.remember(common, str(self.repo))
+        self.tmux.sessions.return_value = [
+            {"id": "$1", "path": str(self.tree), "name": "running-task", "activity": 1},
+            {"id": "$2", "path": str(zebra), "name": "another-task", "activity": 2},
+        ]
+        rows = worktrees.candidates(self.registry, self.tmux)
+        self.assertEqual([row["repo"] for row in rows], ["Zebra", "repo", "repo", "repo", "api"])
+        self.assertEqual([row["path"] for row in rows], list(map(str, [zebra, self.tree, self.repo, recent, api])))
+
     def test_live_names_are_reconciled_and_running_rows_sort_first(self):
         self.register()
         self.tmux.sessions.return_value = [{"id": "$1", "path": str(self.tree), "name": "renamed", "activity": 1}]
@@ -300,6 +320,12 @@ class AgentTrackingTests(RepositoryFixture):
 
 
 class PickerTests(unittest.TestCase):
+    def test_picker_enables_cyclic_navigation(self):
+        result = subprocess.CompletedProcess([], 130, "", "")
+        with patch.object(worktrees, "require"), patch.object(worktrees.subprocess, "run", return_value=result) as execute:
+            self.assertIsNone(worktrees.pick([], ""))
+        self.assertIn("--cycle", execute.call_args.args[0])
+
     def test_query_safe_preview_and_selection(self):
         rows = [{"path": "/repo/'; touch nope", "repo": "repo", "branch": "branch", "agent": "pi",
                  "session_name": "task", "running": False}]
@@ -320,10 +346,10 @@ class PickerTests(unittest.TestCase):
 
         def select(argv, **kwargs):
             fields = [line.split("\t") for line in kwargs["input"].splitlines()]
-            self.assertEqual(fields, [["0", "repo-one", "named-task", "running"],
-                                      ["1", "repo-two", "topic", "stopped"]])
+            self.assertEqual(fields, [["0", "repo-one  named-task     running"],
+                                      ["1", "repo-two  topic          stopped"]])
             self.assertIn("--with-nth=2..", argv)
-            self.assertEqual(argv[argv.index("--header") + 1].splitlines()[0], "REPO | TASK / BRANCH | STATUS")
+            self.assertEqual(argv[argv.index("--header") + 1].splitlines()[0], "REPO      TASK / BRANCH  STATUS")
             preview = shlex.split(argv[argv.index("--preview") + 1])
             with open(preview[-2]) as stream:
                 self.assertEqual(json.load(stream), rows)
@@ -331,6 +357,40 @@ class PickerTests(unittest.TestCase):
 
         with patch.object(worktrees, "require"), patch.object(worktrees.subprocess, "run", side_effect=select):
             self.assertEqual(worktrees.pick(rows, "query"), (rows[1]["path"], True, "query"))
+
+    def test_columns_align_with_header_for_different_label_lengths(self):
+        rows = [{"path": "/example/first", "repo": "api", "branch": "unused", "session_name": "fix",
+                 "running": True},
+                {"path": "/example/second", "repo": "long-repository-name", "branch": "feature/long-branch-name",
+                 "session_name": "", "running": False},
+                {"path": "/example/third", "repo": "web\tclient", "branch": "unused", "session_name": "task\n\u754c",
+                 "running": True}]
+        result = subprocess.CompletedProcess([], 0, "query\n\n2\tselected row\n", "")
+        with patch.object(worktrees, "require"), patch.object(worktrees.subprocess, "run", return_value=result) as execute:
+            self.assertEqual(worktrees.pick(rows, "query", "Removed\nworktree"), (rows[2]["path"], False, "query"))
+        args = execute.call_args.args[0]
+        header, hint, notice = args[args.index("--header") + 1].splitlines()
+        lines = execute.call_args.kwargs["input"].splitlines()
+        self.assertEqual(len(lines), len(rows))
+        self.assertEqual(hint, "Ctrl-X removes the worktree and tagged sessions")
+        self.assertEqual(notice, "Removed\\nworktree")
+        for index, (line, row) in enumerate(zip(lines, rows)):
+            with self.subTest(index=index):
+                hidden_index, visible = line.split("\t")
+                self.assertEqual(hidden_index, str(index))
+                repo = worktrees.display(row["repo"])
+                task = worktrees.display(row["session_name"] or row["branch"])
+                status = "running" if row["running"] else "stopped"
+                self.assertEqual(visible[:len(repo)], repo)
+                self.assertEqual(visible[header.index("TASK / BRANCH"):header.index("STATUS")].rstrip(), task)
+                self.assertEqual(visible[header.index("STATUS"):], status)
+
+    def test_empty_picker_uses_header_widths(self):
+        result = subprocess.CompletedProcess([], 130, "", "")
+        with patch.object(worktrees, "require"), patch.object(worktrees.subprocess, "run", return_value=result) as execute:
+            self.assertIsNone(worktrees.pick([], ""))
+        args = execute.call_args.args[0]
+        self.assertEqual(args[args.index("--header") + 1].splitlines()[0], "REPO  TASK / BRANCH  STATUS")
 
     def test_preview_shows_full_details_without_interpreting_terminal_controls(self):
         row = {"branch": "feature/full-branch", "agent": "example-agent", "path": "/repo/quote'; $(nope)\nline"}

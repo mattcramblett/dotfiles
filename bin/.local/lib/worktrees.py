@@ -440,7 +440,8 @@ def candidates(registry, tmux):
                          "session_name": session["name"] if session else record.get("session_name", ""),
                          "agent": record.get("agent"), "conversation": record.get("conversation"), "running": bool(session),
                          "updated_at": record.get("updated_at", 0)})
-    return sorted(rows, key=lambda item: (not item["running"], -item["updated_at"], item["repo"], item["path"]))
+    rows.sort(key=lambda item: (not item["running"], -item["updated_at"], item["path"]))
+    return sorted(rows, key=lambda item: item["repo"].casefold(), reverse=True)
 
 
 def require(*commands):
@@ -651,12 +652,16 @@ def pick(rows, query, notice=""):
         json.dump(rows, snapshot)
         snapshot.flush()
         preview = shlex.join([sys.executable, str(helper_path()), "preview", snapshot.name]) + " {1}"
-        lines = [f"{index}\t{display(row['repo'])}\t{display(row['session_name'] or row['branch'])}\t"
-                 f"{'running' if row['running'] else 'stopped'}" for index, row in enumerate(rows)]
-        header = "REPO | TASK / BRANCH | STATUS\nCtrl-X removes the worktree and tagged sessions"
+        columns = [(display(row["repo"]), display(row["session_name"] or row["branch"]),
+                    "running" if row["running"] else "stopped") for row in rows]
+        repo_width = max([len("REPO"), *(len(repo) for repo, _, _ in columns)])
+        task_width = max([len("TASK / BRANCH"), *(len(task) for _, task, _ in columns)])
+        row_format = f"{{:<{repo_width}}}  {{:<{task_width}}}  {{}}"
+        lines = [f"{index}\t{row_format.format(*values)}" for index, values in enumerate(columns)]
+        header = row_format.format("REPO", "TASK / BRANCH", "STATUS") + "\nCtrl-X removes the worktree and tagged sessions"
         if notice:
             header += "\n" + display(notice)
-        result = subprocess.run(["fzf", "--no-multi", "--delimiter=\t", "--with-nth=2..", "--prompt=worktree> ",
+        result = subprocess.run(["fzf", "--no-multi", "--cycle", "--delimiter=\t", "--with-nth=2..", "--prompt=worktree> ",
                                  "--header", header, "--query", query or "", "--expect=ctrl-x", "--print-query",
                                  "--preview", preview, "--preview-window=right,55%,wrap"],
                                 input="\n".join(lines) + "\n", capture_output=True, text=True, check=False)

@@ -420,6 +420,25 @@ class TerminalRemovalTests(RepositoryFixture):
         self.assertTrue(self.tree.exists())
 
     @unittest.skipUnless(worktrees.shutil.which("fzf"), "fzf is required")
+    def test_real_fzf_ctrl_n_and_ctrl_p_wrap_at_list_boundaries(self):
+        rows = [{"path": str(path), "repo": "example", "branch": "topic", "agent": None,
+                 "session_name": "", "running": False} for path in (self.repo, self.tree)]
+        script = ("import sys,json; sys.dont_write_bytecode=True; "
+                  f"sys.path.insert(0,{str(ROOT / 'bin/.local/lib')!r}); "
+                  "from worktrees import pick; "
+                  f"print('RESULT:'+json.dumps(pick({rows!r},'')),flush=True)")
+        env = {**self.env, "TERM": "xterm-256color",
+               "FZF_DEFAULT_OPTS": "--no-color --no-unicode --no-mouse --layout=reverse"}
+        env.pop("FZF_DEFAULT_OPTS_FILE", None)
+        for keys, expected in [(b"\x0e\x0e", self.repo), (b"\x10", self.tree)]:
+            with self.subTest(keys=keys):
+                code, output = terminal_command([sys.executable, "-c", script], self.root,
+                                                env, b"Git status:", keys + b"\r")
+                self.assertEqual(code, 0, output)
+                result = json.loads(output.split("RESULT:", 1)[1].strip())
+                self.assertEqual(result, [str(expected), False, ""])
+
+    @unittest.skipUnless(worktrees.shutil.which("fzf"), "fzf is required")
     def test_real_fzf_distinguishes_enter_from_ctrl_x(self):
         rows = [{"path": str(self.tree), "repo": "example", "branch": "topic", "agent": None,
                  "session_name": "", "running": False}]
