@@ -646,6 +646,19 @@ def preview_worktree(row):
     subprocess.run(["git", "-C", row["path"], "status", "--short", "--branch"], check=False)
 
 
+PICKER_PALETTE = {
+    "background": "#020a1a", "selection": "#0e1b30", "border": "#1b6a73",
+    "text": "#aab2bf", "bright": "#dce1e8", "muted": "#6c7d9c",
+    "blue": "#41a7fc", "green": "#8bcd5b", "yellow": "#efbd5d",
+}
+
+
+def picker_style(value, color, *, bold=False):
+    hex_color = PICKER_PALETTE[color]
+    rgb = ";".join(str(int(hex_color[index:index + 2], 16)) for index in (1, 3, 5))
+    return f"\033[{'1;' if bold else ''}38;2;{rgb}m{value}\033[0m"
+
+
 def pick(rows, query, notice=""):
     require("fzf")
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as snapshot:
@@ -657,13 +670,32 @@ def pick(rows, query, notice=""):
         repo_width = max([len("REPO"), *(len(repo) for repo, _, _ in columns)])
         task_width = max([len("TASK / BRANCH"), *(len(task) for _, task, _ in columns)])
         row_format = f"{{:<{repo_width}}}  {{:<{task_width}}}  {{}}"
-        lines = [f"{index}\t{row_format.format(*values)}" for index, values in enumerate(columns)]
-        header = row_format.format("REPO", "TASK / BRANCH", "STATUS") + "\nCtrl-X removes the worktree and tagged sessions"
+        lines = []
+        for index, (repo, task, status) in enumerate(columns):
+            repo_label = picker_style(repo.ljust(repo_width), "blue", bold=True)
+            running = status == "running"
+            badge = picker_style(f"{'●' if running else '○'} {status}", "green" if running else "muted")
+            lines.append(f"{index}\t{repo_label}  {task:<{task_width}}  {badge}")
+        header = row_format.format("REPO", "TASK / BRANCH", "STATUS")
         if notice:
-            header += "\n" + display(notice)
-        result = subprocess.run(["fzf", "--no-multi", "--cycle", "--delimiter=\t", "--with-nth=2..", "--prompt=worktree> ",
-                                 "--header", header, "--query", query or "", "--expect=ctrl-x", "--print-query",
-                                 "--preview", preview, "--preview-window=right,55%,wrap"],
+            header += "\n" + picker_style(display(notice), "yellow")
+        footer = "Enter open  ·  Ctrl-X remove  ·  Esc close\nCtrl-N/P move  ·  Ctrl-/ preview"
+        theme = ",".join(f"{role}:{PICKER_PALETTE[color]}" for role, color in {
+            "bg": "background", "fg": "text", "bg+": "selection", "fg+": "bright",
+            "gutter": "background", "preview-bg": "background", "hl": "yellow", "hl+": "yellow",
+            "border": "border", "preview-border": "border", "separator": "border", "scrollbar": "border",
+            "label": "blue", "prompt": "blue", "pointer": "blue", "marker": "green", "spinner": "green",
+            "header": "muted", "footer": "muted", "info": "muted",
+        }.items()) + ",header:bold,label:bold,hl:bold,hl+:bold"
+        result = subprocess.run(["fzf", "--no-multi", "--cycle", "--ansi", "--delimiter=\t", "--with-nth=2..",
+                                 "--layout=reverse", "--border=rounded", "--padding=1,2", "--highlight-line",
+                                 "--border-label= ◇ Worktrees ", "--border-label-pos=2", "--info=inline-right",
+                                 "--prompt=❯ ", "--ghost=Search repo, task, or status", "--pointer=▸", "--gutter= ",
+                                 "--color", theme,
+                                 "--header", header, "--footer", footer, "--query", query or "",
+                                 "--expect=ctrl-x", "--print-query", "--bind=ctrl-/:toggle-preview",
+                                 "--preview", preview, "--preview-label= Details ", "--preview-label-pos=2",
+                                 "--preview-window=right,45%,border-rounded,wrap,<55(down,40%,border-rounded,wrap)"],
                                 input="\n".join(lines) + "\n", capture_output=True, text=True, check=False)
         if result.returncode in (1, 130):
             return None

@@ -3,6 +3,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
@@ -17,6 +18,10 @@ BIN = ROOT / "bin/.local/bin"
 SPEC = importlib.util.spec_from_file_location("worktrees", ROOT / "bin/.local/lib/worktrees.py")
 worktrees = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(worktrees)
+
+
+def strip_ansi(value):
+    return re.sub(r"\x1b\[[0-9;]*m", "", value)
 
 
 class RepositoryFixture(unittest.TestCase):
@@ -320,11 +325,22 @@ class AgentTrackingTests(RepositoryFixture):
 
 
 class PickerTests(unittest.TestCase):
-    def test_picker_enables_cyclic_navigation(self):
+    def test_picker_styles_layout_without_changing_navigation(self):
         result = subprocess.CompletedProcess([], 130, "", "")
         with patch.object(worktrees, "require"), patch.object(worktrees.subprocess, "run", return_value=result) as execute:
             self.assertIsNone(worktrees.pick([], ""))
-        self.assertIn("--cycle", execute.call_args.args[0])
+        args = execute.call_args.args[0]
+        for option in ("--cycle", "--ansi", "--layout=reverse", "--border=rounded", "--highlight-line",
+                       "--bind=ctrl-/:toggle-preview", "--pointer=▸", "--gutter= ",
+                       "--ghost=Search repo, task, or status"):
+            self.assertIn(option, args)
+        theme = args[args.index("--color") + 1]
+        self.assertIn("bg:#020a1a", theme)
+        self.assertIn("header:bold", theme)
+        footer = args[args.index("--footer") + 1]
+        for hint in ("Enter open", "Ctrl-X remove", "Esc close", "Ctrl-N/P move", "Ctrl-/ preview"):
+            self.assertIn(hint, footer)
+        self.assertIn("<55(down,40%,border-rounded,wrap)", args[-1])
 
     def test_query_safe_preview_and_selection(self):
         rows = [{"path": "/repo/'; touch nope", "repo": "repo", "branch": "branch", "agent": "pi",
@@ -345,42 +361,65 @@ class PickerTests(unittest.TestCase):
                  "session_name": "", "running": False}]
 
         def select(argv, **kwargs):
-            fields = [line.split("\t") for line in kwargs["input"].splitlines()]
-            self.assertEqual(fields, [["0", "repo-one  named-task     running"],
-                                      ["1", "repo-two  topic          stopped"]])
+            fields = [strip_ansi(line).split("\t") for line in kwargs["input"].splitlines()]
+            self.assertEqual(fields, [["0", "repo-one  named-task     ● running"],
+                                      ["1", "repo-two  topic          ○ stopped"]])
+            self.assertIn("\x1b[1;38;2;", kwargs["input"])
+            self.assertIn("\x1b[38;2;139;205;91m● running", kwargs["input"])
+            self.assertIn("\x1b[38;2;108;125;156m○ stopped", kwargs["input"])
             self.assertIn("--with-nth=2..", argv)
             self.assertEqual(argv[argv.index("--header") + 1].splitlines()[0], "REPO      TASK / BRANCH  STATUS")
             preview = shlex.split(argv[argv.index("--preview") + 1])
             with open(preview[-2]) as stream:
                 self.assertEqual(json.load(stream), rows)
-            return subprocess.CompletedProcess(argv, 0, "query\nctrl-x\n1\trepo-two\ttopic\tstopped\n", "")
+            return subprocess.CompletedProcess(argv, 0, "query\nctrl-x\n" + kwargs["input"].splitlines()[1] + "\n", "")
 
         with patch.object(worktrees, "require"), patch.object(worktrees.subprocess, "run", side_effect=select):
             self.assertEqual(worktrees.pick(rows, "query"), (rows[1]["path"], True, "query"))
+
+    @unittest.skipUnless(shutil.which("fzf"), "fzf is required")
+    def test_real_fzf_searches_styled_columns_without_exposing_metadata(self):
+        rows = [{"path": "/example/preview-only-path", "repo": "api", "branch": "feature/login", "agent": "preview-agent",
+                 "session_name": "", "running": True},
+                {"path": "/example/other", "repo": "web", "branch": "topic", "agent": None,
+                 "session_name": "named-task", "running": False}]
+        cancelled = subprocess.CompletedProcess([], 130, "", "")
+        with patch.object(worktrees, "require"), patch.object(worktrees.subprocess, "run", return_value=cancelled) as execute:
+            worktrees.pick(rows, "")
+        args = execute.call_args.args[0]
+        env = {**os.environ, "FZF_DEFAULT_OPTS": "", "FZF_DEFAULT_OPTS_FILE": os.devnull}
+        for query, expected in [("api", 0), ("login", 0), ("running", 0), ("named-task", 1), ("stopped", 1),
+                                ("preview-only-path", None), ("preview-agent", None), ("38;2", None)]:
+            with self.subTest(query=query):
+                result = subprocess.run([*args, "--filter", query], input=execute.call_args.kwargs["input"],
+                                        env=env, capture_output=True, text=True, check=False)
+                self.assertEqual(result.returncode, 1 if expected is None else 0, result.stderr)
+                if expected is not None:
+                    self.assertEqual(result.stdout.splitlines()[-1].split("\t", 1)[0], str(expected))
 
     def test_columns_align_with_header_for_different_label_lengths(self):
         rows = [{"path": "/example/first", "repo": "api", "branch": "unused", "session_name": "fix",
                  "running": True},
                 {"path": "/example/second", "repo": "long-repository-name", "branch": "feature/long-branch-name",
                  "session_name": "", "running": False},
-                {"path": "/example/third", "repo": "web\tclient", "branch": "unused", "session_name": "task\n\u754c",
+                {"path": "/example/third", "repo": "web\tclient\x1b[31m", "branch": "unused", "session_name": "task\n\u754c",
                  "running": True}]
         result = subprocess.CompletedProcess([], 0, "query\n\n2\tselected row\n", "")
         with patch.object(worktrees, "require"), patch.object(worktrees.subprocess, "run", return_value=result) as execute:
             self.assertEqual(worktrees.pick(rows, "query", "Removed\nworktree"), (rows[2]["path"], False, "query"))
         args = execute.call_args.args[0]
-        header, hint, notice = args[args.index("--header") + 1].splitlines()
-        lines = execute.call_args.kwargs["input"].splitlines()
+        header, notice = strip_ansi(args[args.index("--header") + 1]).splitlines()
+        lines = strip_ansi(execute.call_args.kwargs["input"]).splitlines()
         self.assertEqual(len(lines), len(rows))
-        self.assertEqual(hint, "Ctrl-X removes the worktree and tagged sessions")
         self.assertEqual(notice, "Removed\\nworktree")
+        self.assertIn("\x1b[38;2;239;189;93m", args[args.index("--header") + 1])
         for index, (line, row) in enumerate(zip(lines, rows)):
             with self.subTest(index=index):
                 hidden_index, visible = line.split("\t")
                 self.assertEqual(hidden_index, str(index))
                 repo = worktrees.display(row["repo"])
                 task = worktrees.display(row["session_name"] or row["branch"])
-                status = "running" if row["running"] else "stopped"
+                status = "● running" if row["running"] else "○ stopped"
                 self.assertEqual(visible[:len(repo)], repo)
                 self.assertEqual(visible[header.index("TASK / BRANCH"):header.index("STATUS")].rstrip(), task)
                 self.assertEqual(visible[header.index("STATUS"):], status)

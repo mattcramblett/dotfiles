@@ -344,12 +344,12 @@ class PickerRemovalTests(RepositoryFixture):
                 worktrees.pick([], "query")
 
 
-def terminal_command(argv, cwd, env, trigger, response):
+def terminal_command(argv, cwd, env, trigger, response, *, columns=160):
     pid, descriptor = pty.fork()
     if pid == 0:
         try:
             os.chdir(cwd)
-            fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 60, 160, 0, 0))
+            fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 60, columns, 0, 0))
             os.execvpe(argv[0], argv, env)
         finally:
             os._exit(127)
@@ -418,6 +418,26 @@ class TerminalRemovalTests(RepositoryFixture):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("controlling terminal", result.stderr)
         self.assertTrue(self.tree.exists())
+
+    @unittest.skipUnless(worktrees.shutil.which("fzf"), "fzf is required")
+    def test_real_fzf_renders_styled_picker_at_narrow_and_wide_terminal_sizes(self):
+        rows = [{"path": str(self.tree), "repo": "example", "branch": "topic", "agent": "pi",
+                 "session_name": "named-task", "running": True}]
+        script = ("import sys,json; sys.dont_write_bytecode=True; "
+                  f"sys.path.insert(0,{str(ROOT / 'bin/.local/lib')!r}); "
+                  "from worktrees import pick; "
+                  f"print('RESULT:'+json.dumps(pick({rows!r},'')),flush=True)")
+        env = {**self.env, "TERM": "xterm-256color", "FZF_DEFAULT_OPTS": "--no-mouse"}
+        env.pop("FZF_DEFAULT_OPTS_FILE", None)
+        for columns in (100, 160):
+            with self.subTest(columns=columns):
+                code, output = terminal_command([sys.executable, "-c", script], self.root,
+                                                env, b"Git status:", b"\r", columns=columns)
+                self.assertEqual(code, 0, output)
+                for label in ("Worktrees", "Details", "●", "Enter open", "Ctrl-/ preview"):
+                    self.assertIn(label, output)
+                result = json.loads(output.split("RESULT:", 1)[1].strip())
+                self.assertEqual(result, [str(self.tree), False, ""])
 
     @unittest.skipUnless(worktrees.shutil.which("fzf"), "fzf is required")
     def test_real_fzf_ctrl_n_and_ctrl_p_wrap_at_list_boundaries(self):
