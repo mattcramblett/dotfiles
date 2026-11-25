@@ -74,8 +74,8 @@ global_git_ignore=$(git config --global --path --get core.excludesFile) ||
   global_git_ignore="${XDG_CONFIG_HOME:-$HOME/.config}/git/ignore"
 mkdir -p "$(dirname -- "$global_git_ignore")"
 touch "$global_git_ignore"
-if ! grep -qxF '.pi/tasks/' "$global_git_ignore"; then
-  printf '\n.pi/tasks/\n' >>"$global_git_ignore"
+if ! grep -qxF '**/.pi/tasks/' "$global_git_ignore"; then
+  printf '\n**/.pi/tasks/\n' >>"$global_git_ignore"
 fi
 
 clone_dependency https://github.com/ohmyzsh/ohmyzsh.git "$HOME/.oh-my-zsh"
